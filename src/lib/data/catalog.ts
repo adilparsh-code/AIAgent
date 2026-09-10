@@ -116,7 +116,7 @@ export const SAMPLE_AGENTS: Agent[] = [
 export const SAMPLE_METRICS: DashboardMetrics = {
   totalOpportunities: 6,
   validatedOpportunities: 1,
-  activeExperiments: 1,
+  activeExperiments: 0,
   totalProducts: 2,
   publishedProducts: 1,
   totalRevenue: 247.5,

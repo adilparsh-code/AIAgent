@@ -38,15 +38,23 @@ export default function OpportunitiesPage() {
           <option value="ALL">All categories</option>
           <option value="CHILDRENS_BOOKS">Children&apos;s books</option>
           <option value="TEACHER_RESOURCES">Teacher resources</option>
-          <option value="EDUCATIONAL_RESOURCES">Educational resources</option>
+          <option value="PRINTABLES">Printables</option>
           <option value="AFFILIATE">Affiliate</option>
           <option value="DIGITAL_TOOLS">Digital tools</option>
+          <option value="SAAS">SaaS</option>
         </select>
         <select className="rounded-md border px-2 py-2 text-sm" value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Filter by status">
           <option value="ALL">All statuses</option>
           <option value="IDEA">Idea</option>
           <option value="RESEARCHING">Researching</option>
+          <option value="VALIDATING">Validating</option>
           <option value="VALIDATED">Validated</option>
+          <option value="BUILDING">Building</option>
+          <option value="PUBLISHED">Published</option>
+          <option value="EARNING">Earning</option>
+          <option value="SCALING">Scaling</option>
+          <option value="PAUSED">Paused</option>
+          <option value="REJECTED">Rejected</option>
         </select>
         <select className="rounded-md border px-2 py-2 text-sm" value={halal} onChange={(e) => setHalal(e.target.value)} aria-label="Filter by halal status">
           <option value="ALL">All halal statuses</option>

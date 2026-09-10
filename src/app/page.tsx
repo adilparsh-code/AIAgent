@@ -1,23 +1,30 @@
 import Link from "next/link";
 import { SAMPLE_OPPORTUNITIES, SAMPLE_PRODUCTS, SAMPLE_EXPERIMENTS, SAMPLE_REVENUE } from "@/lib/data";
+import { getRecommendation } from "@/lib/scoring";
 import { formatCurrency } from "@/lib/utils";
 import { Badge, Card, CardHeader, statusBadgeClass } from "@/components/ui";
 
 export default function DashboardPage() {
   const opps = [...SAMPLE_OPPORTUNITIES].sort((a, b) => b.overallScore - a.overallScore);
   const totalOpportunities = SAMPLE_OPPORTUNITIES.length;
-  const validated = SAMPLE_OPPORTUNITIES.filter((o) => ["VALIDATED", "BUILDING", "PUBLISHED", "EARNING", "SCALING"].includes(o.status)).length;
-  const activeExperiments = SAMPLE_EXPERIMENTS.filter((e) => e.status === "ACTIVE").length + 1;
+  const validated = SAMPLE_OPPORTUNITIES.filter((o) =>
+    ["VALIDATED", "BUILDING", "PUBLISHED", "EARNING", "SCALING"].includes(o.status)
+  ).length;
+  const activeExperiments = SAMPLE_EXPERIMENTS.filter((e) => e.status === "ACTIVE");
   const totalProducts = SAMPLE_PRODUCTS.length;
   const publishedProducts = SAMPLE_PRODUCTS.filter((p) => p.status === "PUBLISHED").length;
   const totalRevenue = SAMPLE_REVENUE.reduce((sum, r) => sum + r.netRevenue, 0);
   const monthlyRevenue = totalRevenue;
-  const top = opps[0];
+
+  // Next Best Action: highest scoring HALAL opportunity; NOT_ALLOWED can never be recommended.
+  const eligible = opps.filter((o) => o.halalStatus !== "NOT_ALLOWED");
+  const top = eligible[0] ?? opps[0];
+  const recommendation = getRecommendation(top.halalStatus, top.title, top.overallScore);
 
   const metrics = [
     { label: "Total Opportunities", value: String(totalOpportunities) },
     { label: "Validated Opportunities", value: String(validated) },
-    { label: "Active Experiments", value: String(activeExperiments) },
+    { label: "Active Experiments", value: String(activeExperiments.length) },
     { label: "Products", value: String(totalProducts) },
     { label: "Published Products", value: String(publishedProducts) },
     { label: "Total Revenue", value: formatCurrency(totalRevenue) },
@@ -43,20 +50,26 @@ export default function DashboardPage() {
       <Card>
         <CardHeader title="Next Best Action" subtitle="Transparent recommendation from SAMPLE DATA scores" />
         <div className="space-y-2 p-5">
-          <div className="text-lg font-semibold">Continue scaling: {top.title}</div>
+          <div className="text-lg font-semibold">Next: {top.title}</div>
+          <p className="text-sm text-slate-600">{recommendation}</p>
           <p className="text-sm text-slate-600">
-            It has the highest overall score ({top.overallScore.toFixed(1)}/100) among HALAL opportunities,
-            an existing published product, and a completed SCALE experiment. Next: {top.nextAction}.
+            Overall score {top.overallScore.toFixed(1)}/100 · Status {top.status} · Halal {top.halalStatus}.
+            Planned objective: {top.nextAction}.
           </p>
-          <Link href={`/opportunities/${top.id}`} className="inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">
-            Open opportunity
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/opportunities/${top.id}`} className="inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">
+              Open opportunity
+            </Link>
+            <Link href="/experiments" className="inline-block rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium">
+              View experiments
+            </Link>
+          </div>
         </div>
       </Card>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader title="Top opportunities" subtitle="Sorted by overall score" action={<Link className="text-sm text-blue-600" href="/opportunities">View all</Link>} />
+          <CardHeader title="Opportunity overview" subtitle="Highest scoring SAMPLE DATA opportunities" action={<Link className="text-sm text-blue-600" href="/opportunities">View all</Link>} />
           <ul className="divide-y divide-slate-100">
             {opps.slice(0, 4).map((o) => (
               <li key={o.id} className="flex items-center justify-between gap-3 px-5 py-3">
@@ -81,6 +94,28 @@ export default function DashboardPage() {
           </div>
         </Card>
       </div>
+
+      <Card>
+        <CardHeader
+          title="Experiment overview"
+          subtitle="SAMPLE DATA experiments"
+          action={<Link className="text-sm text-blue-600" href="/experiments">View experiments</Link>}
+        />
+        {activeExperiments.length === 0 ? (
+          <p className="p-5 text-sm text-slate-500">
+            No active experiments in SAMPLE DATA. Completed experiments remain visible under Experiments.
+          </p>
+        ) : (
+          <ul className="divide-y divide-slate-100">
+            {activeExperiments.map((e) => (
+              <li key={e.id} className="px-5 py-3 text-sm">
+                <span className="font-medium">{e.hypothesis}</span>
+                <span className="ml-2"><Badge className={statusBadgeClass(e.status)}>{e.status}</Badge></span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
     </div>
   );
 }

@@ -63,6 +63,20 @@ export function getScoreContributions(breakdown: ScoreBreakdown): {
 }
 
 /**
+ * A NOT_ALLOWED opportunity must never receive a normal positive recommendation.
+ * Returns a safe recommendation string instead.
+ */
+export function getRecommendation(halalStatus: string, title: string, score: number): string {
+  if (halalStatus === "NOT_ALLOWED") {
+    return `Blocked: ${title} is marked NOT_ALLOWED and cannot be recommended. Review compliance before any action.`;
+  }
+  if (halalStatus === "REVIEW_REQUIRED") {
+    return `Human review required before scaling ${title} (score ${score.toFixed(1)}/100). Automated screening is not a religious ruling.`;
+  }
+  return `Recommended: continue validating ${title} (score ${score.toFixed(1)}/100).`;
+}
+
+/**
  * Validate that all scores are within 0-100 range.
  */
 export function validateScores(breakdown: ScoreBreakdown): boolean {
