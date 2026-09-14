@@ -1,4 +1,5 @@
 import { getResearchProviders } from "./research-providers";
+import type { ResearchProvider } from "./base-provider";
 import type { Evidence, ResearchFinding, ResearchQuery, ResearchRun, ResearchProviderName } from "./research-types";
 
 function runId() {
@@ -17,8 +18,9 @@ function makeQueries(title: string): ResearchQuery[] {
 function dedupeEvidence(evidence: Evidence[]): Evidence[] {
   const seen = new Set<string>();
   return evidence.filter((item) => {
-    if (seen.has(item.hash)) return false;
-    seen.add(item.hash);
+    const key = item.hash.trim().toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
     return true;
   });
 }
@@ -40,10 +42,14 @@ function buildFindings(evidence: Evidence[]): ResearchFinding[] {
   }));
 }
 
-export async function runResearch(opportunityId: string, title: string): Promise<ResearchRun> {
+export async function runResearch(
+  opportunityId: string,
+  title: string,
+  providerOverrides?: ResearchProvider[],
+): Promise<ResearchRun> {
   const startedAt = new Date().toISOString();
   const queries = makeQueries(title);
-  const providers = getResearchProviders();
+  const providers = providerOverrides ?? getResearchProviders();
   const evidence: Evidence[] = [];
   const errors: string[] = [];
   const attempted: ResearchProviderName[] = [];
@@ -71,9 +77,17 @@ export async function runResearch(opportunityId: string, title: string): Promise
     : 0;
 
   return {
-    id: runId(), opportunityId, status: errors.length && !cleanEvidence.length ? "FAILED" : errors.length ? "PARTIAL" : "COMPLETED",
-    startedAt, completedAt: new Date().toISOString(), queries,
-    evidence: cleanEvidence, findings, confidence,
-    providersAttempted: attempted, providersSucceeded: succeeded, errors,
+    id: runId(),
+    opportunityId,
+    status: errors.length && !cleanEvidence.length ? "FAILED" : errors.length ? "PARTIAL" : "COMPLETED",
+    startedAt,
+    completedAt: new Date().toISOString(),
+    queries,
+    evidence: cleanEvidence,
+    findings,
+    confidence,
+    providersAttempted: attempted,
+    providersSucceeded: succeeded,
+    errors,
   };
 }
