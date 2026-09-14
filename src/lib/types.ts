@@ -141,7 +141,7 @@ export interface Experiment {
   profit: number;
   conversionRate: number;
   decision: ExperimentDecision | null;
-  status: "ACTIVE" | "COMPLETED" | "PAUSED";
+  status: "PLANNED" | "ACTIVE" | "COMPLETED" | "FAILED" | "PAUSED";
   createdAt: string;
   updatedAt: string;
 }
@@ -157,7 +157,7 @@ export type RevenueSource =
 export interface RevenueEntry {
   id: string;
   date: string;
-  productId: string | null;
+  productId?: string | null;
   opportunityId: string | null;
   revenueSource: RevenueSource;
   grossRevenue: number;
