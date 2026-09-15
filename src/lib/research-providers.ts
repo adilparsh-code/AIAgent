@@ -18,7 +18,7 @@ export function createUnavailableProvider(name: "brave" | "reddit" | "google-tre
   return {
     name,
     async search(): Promise<Evidence[]> {
-      return [];
+      throw new Error(`${name}: provider is not configured`);
     },
   };
 }
@@ -28,7 +28,8 @@ export function createBraveProvider(): ResearchProvider {
     name: "brave",
     async search(query: ResearchQuery): Promise<Evidence[]> {
       const key = process.env.BRAVE_SEARCH_API_KEY;
-      if (!key || typeof fetch === "undefined") return [];
+      if (!key) throw new Error("brave: BRAVE_SEARCH_API_KEY is not configured");
+      if (typeof fetch === "undefined") throw new Error("brave: fetch is unavailable in this runtime");
       try {
         const url = new URL("https://api.search.brave.com/res/v1/web/search");
         url.searchParams.set("q", query.query);
@@ -37,7 +38,7 @@ export function createBraveProvider(): ResearchProvider {
           headers: { Accept: "application/json", "X-Subscription-Token": key },
           cache: "no-store",
         });
-        if (!response.ok) return [];
+        if (!response.ok) throw new Error(`brave: API returned HTTP ${response.status}`);
         const data = (await response.json()) as { web?: { results?: Array<{ title?: string; url?: string; description?: string }> } };
         return (data.web?.results ?? []).filter((r) => r.url).map((r, index) => {
           const title = r.title ?? "Untitled result";
@@ -50,8 +51,8 @@ export function createBraveProvider(): ResearchProvider {
             hash: `${title}|${snippet}|${url}`.toLowerCase(), supports: [query.purpose], contradicts: [],
           };
         });
-      } catch {
-        return [];
+      } catch (error) {
+        throw new Error(`brave: ${error instanceof Error ? error.message : "request failed"}`);
       }
     },
   };
@@ -67,7 +68,7 @@ export function createRedditProvider(): ResearchProvider {
         url.searchParams.set("limit", "10");
         url.searchParams.set("raw_json", "1");
         const response = await fetch(url, { headers: { Accept: "application/json", "User-Agent": "AIAgent/1.0 research" }, cache: "no-store" });
-        if (!response.ok) return [];
+        if (!response.ok) throw new Error(`reddit: API returned HTTP ${response.status}`);
         const data = (await response.json()) as { data?: { children?: Array<{ data?: { title?: string; url?: string; selftext?: string; permalink?: string } }> } };
         return (data.data?.children ?? []).map((item, index) => item.data).filter(Boolean).map((r, index) => {
           const title = r!.title ?? "Reddit discussion";
@@ -80,8 +81,8 @@ export function createRedditProvider(): ResearchProvider {
             hash: `${title}|${snippet}|${url}`.toLowerCase(), supports: [query.purpose], contradicts: [],
           };
         });
-      } catch {
-        return [];
+      } catch (error) {
+        throw new Error(`reddit: ${error instanceof Error ? error.message : "request failed"}`);
       }
     },
   };
