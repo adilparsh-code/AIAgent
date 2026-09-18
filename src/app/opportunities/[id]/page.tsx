@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import { opportunityRepository } from "@/lib/repositories";
 import { getScoreContributions, calculateOverallScore } from "@/lib/scoring";
 import type { Opportunity } from "@/lib/types";
+import type { ResearchRun } from "@/lib/research-types";
 import { Badge, Card, CardHeader, ScoreBar, Button, statusBadgeClass } from "@/components/ui";
 
 export default function OpportunityDetailPage({ params }: { params: { id: string } }) {
@@ -16,6 +17,9 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
   const [isEditing, setIsEditing] = useState(false);
   const [isSample, setIsSample] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Opportunity>>({});
+  const [researchRun, setResearchRun] = useState<ResearchRun | null>(null);
+  const [researching, setResearching] = useState(false);
+  const [researchError, setResearchError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadOpportunity() {
@@ -53,6 +57,25 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
     "IDEA", "RESEARCHING", "VALIDATING", "VALIDATED", "BUILDING", 
     "PUBLISHED", "EARNING", "SCALING", "PAUSED", "REJECTED"
   ];
+
+  const handleResearch = async () => {
+    setResearching(true);
+    setResearchError(null);
+    try {
+      const response = await fetch("/api/research", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: opp.id, title: opp.title }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data?.error ?? data?.errors?.join("; ") ?? "Research failed");
+      setResearchRun(data as ResearchRun);
+    } catch (error) {
+      setResearchError(error instanceof Error ? error.message : "Research failed");
+    } finally {
+      setResearching(false);
+    }
+  };
 
   const handleSave = async () => {
     await opportunityRepository.update(params.id, editForm);
@@ -109,7 +132,12 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
       </div>
 
       {/* Action buttons */}
-      <div className="flex gap-2">
+      <div className="flex flex-wrap gap-2">
+        {!isEditing && (
+          <Button onClick={handleResearch} disabled={researching}>
+            {researching ? "Researching..." : "Run Live Research"}
+          </Button>
+        )}
         {!isEditing && !isSample && (
           <>
             <Button onClick={() => setIsEditing(true)}>Edit</Button>
@@ -124,6 +152,56 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
           </>
         )}
       </div>
+      {researchError && (
+        <Card className="border-red-200 bg-red-50 p-4 text-sm text-red-700">
+          <strong>Research error:</strong> {researchError}
+        </Card>
+      )}
+      {researchRun && (
+        <Card>
+          <CardHeader
+            title={`Research result — ${researchRun.status}`}
+            subtitle={`Confidence ${(researchRun.confidence * 100).toFixed(0)}% · ${researchRun.evidence.length} evidence items · ${researchRun.findings.length} findings`}
+          />
+          <div className="space-y-4 p-5 text-sm">
+            {researchRun.errors.length > 0 && (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
+                <strong>Provider warnings:</strong> {researchRun.errors.join(" · ")}
+              </div>
+            )}
+            <div>
+              <h2 className="mb-2 font-semibold">Findings</h2>
+              {researchRun.findings.length ? (
+                <ul className="space-y-3">
+                  {researchRun.findings.map((finding) => (
+                    <li key={finding.id} className="rounded-md border p-3">
+                      <p className="font-medium">{finding.claim}</p>
+                      <p className="mt-1 text-slate-600">{finding.summary}</p>
+                      <p className="mt-1 text-xs text-slate-500">Confidence {(finding.confidence * 100).toFixed(0)}% · {finding.evidenceIds.length} supporting result(s)</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-slate-500">No evidence was returned. Do not treat the opportunity as validated.</p>
+              )}
+            </div>
+            <div>
+              <h2 className="mb-2 font-semibold">Evidence</h2>
+              {researchRun.evidence.length ? (
+                <ul className="space-y-2">
+                  {researchRun.evidence.map((item) => (
+                    <li key={item.id} className="rounded-md border p-3">
+                      <a href={item.url} target="_blank" rel="noreferrer" className="font-medium text-blue-700 hover:underline">{item.title}</a>
+                      <p className="mt-1 text-slate-600">{item.snippet}</p>
+                      <p className="mt-1 text-xs text-slate-500">Source: {item.source} · Quality {(item.qualityScore * 100).toFixed(0)}%</p>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          </div>
+        </Card>
+      )}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader title="Overview" />
