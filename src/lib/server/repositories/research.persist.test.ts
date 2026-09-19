@@ -22,6 +22,7 @@ describe("research persistence payload", () => {
         hash: "worksheet-demand",
         supports: ["demand"],
         contradicts: [],
+        dataClass: "REAL_LIVE_DATA",
       }],
       findings: [{
         id: "finding-1",
@@ -32,8 +33,19 @@ describe("research persistence payload", () => {
         contradictions: [],
       }],
       confidence: 0.8,
+      validationSignals: [{
+        key: "demand",
+        label: "Demand",
+        status: "MIXED",
+        evidenceIds: ["ev-1"],
+        basis: "1 evidence item(s) from 1 provider, avg quality 0.80",
+      }],
+      conclusion: "PROMISING",
+      conclusionBasis: "1 signal(s) partially supported",
       providersAttempted: ["brave"],
       providersSucceeded: ["brave"],
+      providerStatuses: [{ name: "brave", status: "SUCCEEDED", evidenceCount: 1, error: null }],
+      scoreIntegration: { suggestedOverallScore: null, factors: [] },
       errors: [],
     };
 

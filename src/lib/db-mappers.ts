@@ -1,5 +1,19 @@
 import type { Agent, Experiment, Opportunity, Product, ProductMetrics, RevenueEntry } from "./types";
-import type { Evidence, ResearchFinding, ResearchQuery, ResearchRun } from "./research-types";
+import type {
+  Evidence,
+  EvidenceDataClass,
+  ProviderRunStatus,
+  ResearchFinding,
+  ResearchQuery,
+  ResearchRun,
+  ResearchConclusion,
+  ScoreIntegration,
+  ValidationSignal,
+} from "./research-types";
+
+function jsonValue<T>(value: unknown, fallback: T): T {
+  return (value ?? fallback) as T;
+}
 
 function decimalToNumber(value: { toNumber?: () => number } | number | string): number {
   if (typeof value === "number") return value;
@@ -208,8 +222,13 @@ export function mapResearchRun(row: {
   startedAt: Date | string;
   completedAt: Date | string | null;
   confidence: { toNumber?: () => number } | number | string;
+  conclusion?: string | null;
+  conclusionBasis?: string | null;
   providersAttempted: string[];
   providersSucceeded: string[];
+  providerStatuses?: unknown;
+  validationSignals?: unknown;
+  scoreIntegration?: unknown;
   errors: string[];
   queries: Array<{ query: string; source: string; purpose: string }>;
   evidence: Array<{
@@ -224,6 +243,7 @@ export function mapResearchRun(row: {
     hash: string;
     supports: string[];
     contradicts: string[];
+    dataClass?: string | null;
   }>;
   findings: Array<{
     id: string;
@@ -255,8 +275,9 @@ export function mapResearchRun(row: {
       relevanceScore: decimalToNumber(item.relevanceScore),
       qualityScore: decimalToNumber(item.qualityScore),
       hash: item.hash,
-      supports: item.supports,
+      supports: item.supports as Evidence["supports"],
       contradicts: item.contradicts,
+      dataClass: (item.dataClass ?? "REAL_LIVE_DATA") as EvidenceDataClass,
     })),
     findings: row.findings.map((item): ResearchFinding => ({
       id: item.id,
@@ -266,9 +287,17 @@ export function mapResearchRun(row: {
       evidenceIds: item.evidenceIds,
       contradictions: item.contradictions,
     })),
+    validationSignals: jsonValue<ValidationSignal[]>(row.validationSignals, []),
     confidence: decimalToNumber(row.confidence),
+    conclusion: (row.conclusion ?? "INSUFFICIENT_EVIDENCE") as ResearchConclusion,
+    conclusionBasis: row.conclusionBasis ?? "",
     providersAttempted: row.providersAttempted,
     providersSucceeded: row.providersSucceeded,
+    providerStatuses: jsonValue<ProviderRunStatus[]>(row.providerStatuses, []),
+    scoreIntegration: jsonValue<ScoreIntegration>(row.scoreIntegration, {
+      suggestedOverallScore: null,
+      factors: [],
+    }),
     errors: row.errors,
   };
 }

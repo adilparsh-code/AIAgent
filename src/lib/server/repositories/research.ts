@@ -1,5 +1,6 @@
 import "server-only";
 import type { ResearchRun } from "../../research-types";
+import type { Prisma } from "@prisma/client";
 import { getPrisma } from "../../db";
 import { mapResearchRun } from "../../db-mappers";
 
@@ -18,11 +19,12 @@ export class PrismaResearchRepository {
     return row ? mapResearchRun(row) : null;
   }
 
-  async getByOpportunityId(opportunityId: string): Promise<ResearchRun[]> {
+  async getByOpportunityId(opportunityId: string, limit = 20): Promise<ResearchRun[]> {
     const rows = await getPrisma().researchRun.findMany({
       where: { opportunityId },
       include: includeTree,
       orderBy: { startedAt: "desc" },
+      take: Math.min(50, Math.max(1, limit)),
     });
     return rows.map(mapResearchRun);
   }
@@ -48,16 +50,26 @@ export class PrismaResearchRepository {
           startedAt: new Date(run.startedAt),
           completedAt: run.completedAt ? new Date(run.completedAt) : null,
           confidence: run.confidence,
+          conclusion: run.conclusion,
+          conclusionBasis: run.conclusionBasis,
           providersAttempted: run.providersAttempted,
           providersSucceeded: run.providersSucceeded,
+          providerStatuses: run.providerStatuses as unknown as Prisma.InputJsonValue[],
+          validationSignals: run.validationSignals as unknown as Prisma.InputJsonValue[],
+          scoreIntegration: run.scoreIntegration as unknown as Prisma.InputJsonValue,
           errors: run.errors,
         },
         update: {
           status: run.status,
           completedAt: run.completedAt ? new Date(run.completedAt) : null,
           confidence: run.confidence,
+          conclusion: run.conclusion,
+          conclusionBasis: run.conclusionBasis,
           providersAttempted: run.providersAttempted,
           providersSucceeded: run.providersSucceeded,
+          providerStatuses: run.providerStatuses as unknown as Prisma.InputJsonValue[],
+          validationSignals: run.validationSignals as unknown as Prisma.InputJsonValue[],
+          scoreIntegration: run.scoreIntegration as unknown as Prisma.InputJsonValue,
           errors: run.errors,
         },
       });
@@ -92,6 +104,7 @@ export class PrismaResearchRepository {
             hash: item.hash,
             supports: item.supports,
             contradicts: item.contradicts,
+            dataClass: item.dataClass,
           })),
         });
       }

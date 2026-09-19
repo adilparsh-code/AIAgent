@@ -263,8 +263,13 @@ model ResearchRun {
   startedAt            DateTime
   completedAt          DateTime?
   confidence           Decimal           @db.Decimal(6, 4)
+  conclusion           String?
+  conclusionBasis      String?
   providersAttempted   String[]          @default([])
   providersSucceeded   String[]          @default([])
+  providerStatuses     Json?
+  validationSignals    Json?
+  scoreIntegration     Json?
   errors               String[]          @default([])
   queries              ResearchQuery[]
   evidence             Evidence[]
@@ -302,6 +307,7 @@ model Evidence {
   hash           String
   supports       String[]          @default([])
   contradicts    String[]          @default([])
+  dataClass      String            @default("REAL_LIVE_DATA")
   findings       ResearchFinding[] @relation("FindingEvidence")
 
   @@unique([researchRunId, hash])

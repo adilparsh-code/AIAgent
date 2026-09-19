@@ -9,6 +9,8 @@ import { getScoreContributions, calculateOverallScore } from "@/lib/scoring";
 import type { Opportunity } from "@/lib/types";
 import type { ResearchRun } from "@/lib/research-types";
 import { Badge, Card, CardHeader, ScoreBar, Button, statusBadgeClass } from "@/components/ui";
+import { ResearchResultCard } from "@/components/ResearchResultCard";
+import { formatRelativeTime } from "@/lib/format";
 
 export default function OpportunityDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -18,6 +20,7 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
   const [isSample, setIsSample] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Opportunity>>({});
   const [researchRun, setResearchRun] = useState<ResearchRun | null>(null);
+  const [researchHistory, setResearchHistory] = useState<ResearchRun[]>([]);
   const [researching, setResearching] = useState(false);
   const [researchError, setResearchError] = useState<string | null>(null);
 
@@ -33,10 +36,11 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
       const sample = await opportunityRepository.isSample(params.id);
       setIsSample(sample);
       try {
-        const historyResponse = await fetch(`/api/research?opportunityId=${encodeURIComponent(params.id)}&latest=1`);
+        const historyResponse = await fetch(`/api/research?opportunityId=${encodeURIComponent(params.id)}&limit=10`);
         if (historyResponse.ok) {
-          const latest = await historyResponse.json();
-          if (latest) setResearchRun(latest as ResearchRun);
+          const history = (await historyResponse.json()) as ResearchRun[];
+          setResearchHistory(Array.isArray(history) ? history : []);
+          setResearchRun(Array.isArray(history) && history.length ? history[0]! : null);
         }
       } catch {
         // History is optional when the database is not configured.
@@ -77,8 +81,13 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
         body: JSON.stringify({ opportunityId: opp.id, title: opp.title }),
       });
       const data = await response.json();
-      if (!response.ok) throw new Error(data?.error ?? data?.errors?.join("; ") ?? "Research failed");
-      setResearchRun(data as ResearchRun);
+      if (!response.ok) {
+        const detail = typeof data?.error === "string" ? data.error : "Research failed";
+        throw new Error(detail);
+      }
+      const run = data as ResearchRun;
+      setResearchRun(run);
+      setResearchHistory((prev) => [run, ...prev].slice(0, 10));
     } catch (error) {
       setResearchError(error instanceof Error ? error.message : "Research failed");
     } finally {
@@ -166,49 +175,46 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
           <strong>Research error:</strong> {researchError}
         </Card>
       )}
-      {researchRun && (
+      <Card>
+        <CardHeader
+          title="Research"
+          subtitle="Runs real multi-provider research. Unavailable providers are shown honestly — no evidence is invented."
+          action={
+            <Button onClick={handleResearch} disabled={researching}>
+              {researching ? "Researching…" : "Run Research"}
+            </Button>
+          }
+        />
+        <div className="p-5 text-sm">
+          {researchRun ? (
+            <p className="text-slate-600">
+              Last run: <strong>{researchRun.conclusion}</strong> · {formatRelativeTime(researchRun.completedAt ?? researchRun.startedAt)} ·{" "}
+              confidence {(researchRun.confidence * 100).toFixed(0)}% · {researchRun.evidence.length} evidence items
+            </p>
+          ) : (
+            <p className="text-slate-500">
+              No research run yet. Research success does not mean an opportunity is validated — validation is evidence-based
+              and shown below after a run.
+            </p>
+          )}
+        </div>
+      </Card>
+      {researchRun && <ResearchResultCard run={researchRun} />}
+      {researchHistory.length > 1 && (
         <Card>
-          <CardHeader
-            title={`Research result — ${researchRun.status}`}
-            subtitle={`Confidence ${(researchRun.confidence * 100).toFixed(0)}% · ${researchRun.evidence.length} evidence items · ${researchRun.findings.length} findings`}
-          />
-          <div className="space-y-4 p-5 text-sm">
-            {researchRun.errors.length > 0 && (
-              <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-amber-800">
-                <strong>Provider warnings:</strong> {researchRun.errors.join(" · ")}
-              </div>
-            )}
-            <div>
-              <h2 className="mb-2 font-semibold">Findings</h2>
-              {researchRun.findings.length ? (
-                <ul className="space-y-3">
-                  {researchRun.findings.map((finding) => (
-                    <li key={finding.id} className="rounded-md border p-3">
-                      <p className="font-medium">{finding.claim}</p>
-                      <p className="mt-1 text-slate-600">{finding.summary}</p>
-                      <p className="mt-1 text-xs text-slate-500">Confidence {(finding.confidence * 100).toFixed(0)}% · {finding.evidenceIds.length} supporting result(s)</p>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-slate-500">No evidence was returned. Do not treat the opportunity as validated.</p>
-              )}
-            </div>
-            <div>
-              <h2 className="mb-2 font-semibold">Evidence</h2>
-              {researchRun.evidence.length ? (
-                <ul className="space-y-2">
-                  {researchRun.evidence.map((item) => (
-                    <li key={item.id} className="rounded-md border p-3">
-                      <a href={item.url} target="_blank" rel="noreferrer" className="font-medium text-blue-700 hover:underline">{item.title}</a>
-                      <p className="mt-1 text-slate-600">{item.snippet}</p>
-                      <p className="mt-1 text-xs text-slate-500">Source: {item.source} · Quality {(item.qualityScore * 100).toFixed(0)}%</p>
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          </div>
+          <CardHeader title="Research run history" subtitle={`${researchHistory.length} recent runs`} />
+          <ul className="divide-y divide-slate-100 p-5 text-sm">
+            {researchHistory.map((run) => (
+              <li key={run.id} className="flex flex-wrap items-center gap-2 py-2">
+                <Badge className={statusBadgeClass(run.status)}>{run.status}</Badge>
+                <span className="font-mono text-xs text-slate-500">{run.id}</span>
+                <span className="text-slate-600">{run.conclusion}</span>
+                <span className="text-xs text-slate-500">
+                  {formatRelativeTime(run.completedAt ?? run.startedAt)} · {(run.confidence * 100).toFixed(0)}% · {run.evidence.length} evidence
+                </span>
+              </li>
+            ))}
+          </ul>
         </Card>
       )}
       <div className="grid gap-4 lg:grid-cols-2">

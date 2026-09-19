@@ -3,12 +3,22 @@ import { runResearch } from "@/lib/research-orchestrator";
 import { researchRepository } from "@/lib/server/repositories/research";
 import { ensureOpportunityExists } from "@/lib/server/ensure-opportunity";
 import { apiError } from "@/lib/api-error";
+import { isDbUnavailableError } from "@/lib/db";
+
+const MAX_TITLE_LENGTH = 240;
+const MAX_ID_LENGTH = 64;
+
+function safeId(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, MAX_ID_LENGTH);
+}
 
 export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
-    const opportunityId = searchParams.get("opportunityId")?.trim() ?? "";
-    const id = searchParams.get("id")?.trim() ?? "";
+    const opportunityId = safeId(searchParams.get("opportunityId"));
+    const id = safeId(searchParams.get("id"));
+    const limit = Math.min(50, Math.max(1, Number(searchParams.get("limit") ?? 10) || 10));
 
     if (id) {
       const run = await researchRepository.getById(id);
@@ -26,18 +36,28 @@ export async function GET(request: Request) {
       return NextResponse.json(run);
     }
 
-    const history = await researchRepository.getByOpportunityId(opportunityId);
+    const history = await researchRepository.getByOpportunityId(opportunityId, limit);
     return NextResponse.json(history);
   } catch (error) {
+    if (isDbUnavailableError(error)) {
+      return NextResponse.json(
+        { error: "DATABASE_URL is not configured — research runs cannot be loaded without persistence" },
+        { status: 503 },
+      );
+    }
     return apiError(error, "Failed to load research history");
   }
 }
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { opportunityId?: unknown; title?: unknown };
-    const opportunityId = typeof body.opportunityId === "string" ? body.opportunityId.trim() : "";
-    const title = typeof body.title === "string" ? body.title.trim() : "";
+    const body = (await request.json().catch(() => null)) as { opportunityId?: unknown; title?: unknown } | null;
+    if (!body || typeof body !== "object") {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+
+    const opportunityId = safeId(body.opportunityId);
+    const title = typeof body.title === "string" ? body.title.trim().slice(0, MAX_TITLE_LENGTH) : "";
 
     if (!opportunityId || !title) {
       return NextResponse.json(
@@ -46,8 +66,8 @@ export async function POST(request: Request) {
       );
     }
 
-    if (title.length > 240) {
-      return NextResponse.json({ error: "title is too long" }, { status: 400 });
+    if (title.length < 3) {
+      return NextResponse.json({ error: "title must be at least 3 characters" }, { status: 400 });
     }
 
     await ensureOpportunityExists(opportunityId);
@@ -55,6 +75,12 @@ export async function POST(request: Request) {
     const saved = await researchRepository.save(result);
     return NextResponse.json(saved, { status: saved.status === "FAILED" ? 502 : 200 });
   } catch (error) {
+    if (isDbUnavailableError(error)) {
+      return NextResponse.json(
+        { error: "DATABASE_URL is not configured — research runs cannot be saved without persistence" },
+        { status: 503 },
+      );
+    }
     if (error instanceof Error && error.message.includes("was not found")) {
       return NextResponse.json({ error: error.message }, { status: 404 });
     }
