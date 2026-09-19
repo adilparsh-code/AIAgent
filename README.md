@@ -1,4 +1,4 @@
-# AI Income Lab — AIAgent (Phase 1 complete)
+# AI Income Lab — AIAgent (Phase 2 complete)
 
 Discover, validate, build, publish, measure, earn, and scale halal online income opportunities.
 
@@ -31,10 +31,32 @@ Opportunity
    → Confidence calculated (quality + source diversity − contradiction penalty)
    → Evidence-driven conclusion
    → Research-informed score guidance (suggestion only)
-   → Run persisted (ResearchRun / ResearchQuery / Evidence / ResearchFinding)
+   → Run persisted transactionally:
+       ResearchRun + ResearchSource(s) + Evidence + ResearchFinding + Validation
+       + opportunity research metadata — atomically, or not at all
    → Result displayed honestly in the UI
 ```
 
+## Data model (PostgreSQL)
+
+```
+Opportunity 1─N ResearchRun 1─N ResearchQuery
+                        1─N ResearchSource (one row per provider per run)
+                        1─N Evidence N─1 ResearchSource  (which provider produced this evidence)
+                        1─N ResearchFinding N─N Evidence (evidenceIds + FK link)
+                        1─1 Validation   (per-signal statuses + evidence ids, coverage,
+                                          diversity, contradictions, conclusion)
+Opportunity 1─N Product 1─N RevenueEntry
+Opportunity 1─N Experiment
+Opportunity 1─N RevenueEntry
+Agent 1─N AgentRun (task, status, input/output/metadata JSON — extensible)
+```
+
+Every research save is a single transaction: `Run + Sources + Evidence + Findings + Validation`
+plus the opportunity's `lastResearchRunId / lastResearchAt / lastResearchConclusion / researchRunCount`
+are committed together or not at all — a half-saved run can never masquerade as success.
+Duplicate evidence per run is blocked by a `@@unique([researchRunId, hash])` constraint.
+Deleting an opportunity cascades to all of its research data.
 ### Providers
 
 | Provider | Status | Env var (server-only) | Notes |
@@ -97,7 +119,7 @@ Server-side only — never use `NEXT_PUBLIC_*` for research secrets:
 
 | Variable | Purpose |
 | --- | --- |
-| `DATABASE_URL` | PostgreSQL connection string (server-only). |
+| `DATABASE_URL` | PostgreSQL connection string (server-only). Required for persistence. |
 | `BRAVE_SEARCH_API_KEY` | Brave Search API key (optional; without it Brave reports CONFIG_ERROR). |
 | `SERPAPI_API_KEY` | SerpApi key for Google Trends data (optional; without it Google Trends reports CONFIG_ERROR). |
 
@@ -118,12 +140,25 @@ npx prisma migrate deploy
 # Generate the client (also runs on npm install)
 npx prisma generate
 
+# Optional: seed clearly-labeled SAMPLE rows (never run in production by default)
+npx prisma db seed
+
 # Start the app
 npm run dev
 ```
 
 Open `http://localhost:3000`. Without `DATABASE_URL`, the UI still shows in-repo sample/demo data;
-create/update/delete and live research persistence require PostgreSQL.
+create/update/delete, live research, and agent-run persistence require PostgreSQL.
+
+### Migrations and seed
+
+- `npx prisma migrate deploy` — apply committed migrations (production-safe; used by CI).
+- `npx prisma migrate dev` — create a new migration during development.
+- `npx prisma db seed` — runs `prisma/seed.ts`, which inserts ONLY rows marked `isSample: true`
+  with `SAMPLE DATA` in their titles/notes. It is opt-in and never runs automatically; sample
+  rows are always distinguishable from real user data and are excluded from the app's real records.
+
+A fresh database initializes with: `createdb` → `prisma migrate deploy` → (optionally) `prisma db seed`.
 
 ## Running tests and checks
 
@@ -148,7 +183,10 @@ including `prisma migrate deploy` so the migration set stays verified.
    validation signals with their evidence trace, contradictions, confidence, the conclusion with its
    explicit basis, and the research → scoring guidance.
 5. Research run history (last 10 runs) is listed on the opportunity page; every run is persisted
-   with its queries, evidence, findings, signals, and conclusion.
+   with its sources, evidence, findings, validation signals, and conclusion. Click a past run in the
+   history list to inspect it — all data survives browser refresh and server restart.
+6. Agent runs are persisted via `POST/GET /api/agents/[id]/runs` and viewable per agent on the
+   Agents page. Phase 2 records runs for audit; no agent logic executes yet.
 
 ## Security notes
 
@@ -159,19 +197,34 @@ including `prisma migrate deploy` so the migration set stays verified.
 - Errors never include credentials (verified by unit test for the Brave provider).
 - `.gitignore` covers `.env` and `.env*.local`; no secrets are committed.
 
+## Observability
+
+Server-side structured logging (JSON lines) covers: `research.started`, `research.completed`,
+`research.failed`, `database.error`, and `agentRun.started/completed/failed`. Only ids, statuses,
+and error messages are logged — never secrets, API keys, or connection strings.
+
 ## Phase 1 status
 
 Complete: research architecture (providers → evidence → findings → validation → conclusion),
 provider abstraction with injection for tests, evidence normalization/dedup/contradiction handling,
 evidence-driven validation signals and conclusions, research-informed scoring guidance, research run
 history in UI + PostgreSQL, honest provider status reporting, SerpApi-based Google Trends provider,
-expanded test suite (60 tests), CI workflow, and documentation.
+expanded test suite, CI workflow, and documentation.
 
-## Intentionally deferred to Phase 2
+## Phase 2 status (this release)
 
-- Broader provider coverage and richer query strategies (more purposes, localized queries).
-- Automatic application of suggested scores (currently a suggestion requiring human confirmation).
-- Historical trend storage and cross-run evidence correlation.
+Complete: first-class `ResearchSource`, `Validation`, and `AgentRun` models; evidence→source
+traceability ("which provider produced this evidence?"); fully transactional research persistence
+including opportunity research metadata; AgentRun API + per-agent run visibility in the UI; labeled
+seed script (`prisma/seed.ts`, `npm run db:seed`); structured observability logging; persistence
+tests running against real PostgreSQL (CI provides a Postgres 16 service); fresh-database init
+verified; lint verified. Client components still never touch Prisma — UI → API → repository →
+Prisma → PostgreSQL.
+
+## Intentionally deferred to Phase 3
+
+- Autonomous agent execution (AgentRun rows exist for audit; no agent logic runs yet).
+- Cross-run evidence correlation and historical trend storage.
+- Automatic application of suggested scores (still a human-confirmed suggestion).
 - Authentication/multi-tenancy for the dashboard.
-- Phase 2 system scope: persistent Experiments, Products, Revenue, Agents, AgentRuns beyond the
-  current schema, plus any PostgreSQL/Prisma schema evolution needed there.
+- Broader provider coverage and richer query strategies.

@@ -23,6 +23,7 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
   const [researchHistory, setResearchHistory] = useState<ResearchRun[]>([]);
   const [researching, setResearching] = useState(false);
   const [researchError, setResearchError] = useState<string | null>(null);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadOpportunity() {
@@ -87,6 +88,7 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
       }
       const run = data as ResearchRun;
       setResearchRun(run);
+      setSelectedRunId(run.id);
       setResearchHistory((prev) => [run, ...prev].slice(0, 10));
     } catch (error) {
       setResearchError(error instanceof Error ? error.message : "Research failed");
@@ -201,22 +203,33 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
       </Card>
       {researchRun && <ResearchResultCard run={researchRun} />}
       {researchHistory.length > 1 && (
-        <Card>
-          <CardHeader title="Research run history" subtitle={`${researchHistory.length} recent runs`} />
-          <ul className="divide-y divide-slate-100 p-5 text-sm">
-            {researchHistory.map((run) => (
-              <li key={run.id} className="flex flex-wrap items-center gap-2 py-2">
-                <Badge className={statusBadgeClass(run.status)}>{run.status}</Badge>
-                <span className="font-mono text-xs text-slate-500">{run.id}</span>
-                <span className="text-slate-600">{run.conclusion}</span>
-                <span className="text-xs text-slate-500">
-                  {formatRelativeTime(run.completedAt ?? run.startedAt)} · {(run.confidence * 100).toFixed(0)}% · {run.evidence.length} evidence
-                </span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+          <Card>
+            <CardHeader title="Research run history" subtitle={`${researchHistory.length} recent runs — click a run to inspect it`} />
+            <ul className="divide-y divide-slate-100 p-5 text-sm">
+              {researchHistory.map((run) => (
+                <li key={run.id} className="py-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedRunId(run.id);
+                      setResearchRun(run);
+                    }}
+                    className={`flex w-full flex-wrap items-center gap-2 rounded-md px-2 py-1 text-left hover:bg-slate-50 ${
+                      selectedRunId === run.id ? "bg-slate-50 ring-1 ring-slate-200" : ""
+                    }`}
+                  >
+                    <Badge className={statusBadgeClass(run.status)}>{run.status}</Badge>
+                    <span className="font-mono text-xs text-slate-500">{run.id}</span>
+                    <span className="text-slate-600">{run.conclusion}</span>
+                    <span className="text-xs text-slate-500">
+                      {formatRelativeTime(run.completedAt ?? run.startedAt)} · {(run.confidence * 100).toFixed(0)}% · {run.evidence.length} evidence
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        )}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader title="Overview" />

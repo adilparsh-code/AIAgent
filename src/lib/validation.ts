@@ -258,6 +258,38 @@ function statusToFactorStatus(
   return "human-review-required";
 }
 
+/**
+ * Derive the persistable Validation row from a completed research run.
+ * Pure derivation from the run's own signals/evidence — nothing is invented.
+ */
+export function buildPersistedValidation(run: {
+  id: string;
+  evidence: Evidence[];
+  validationSignals: ValidationSignal[];
+  confidence: number;
+  conclusion: ResearchConclusion;
+  conclusionBasis: string;
+}): {
+  signals: ValidationSignal[];
+  evidenceCoverage: number;
+  sourceDiversity: number;
+  contradictionCount: number;
+  confidence: number;
+  conclusion: ResearchConclusion;
+  conclusionBasis: string;
+} {
+  const contradictionCount = countContradictions(run.evidence, []);
+  return {
+    signals: run.validationSignals,
+    evidenceCoverage: run.evidence.length,
+    sourceDiversity: new Set(run.evidence.map((item) => item.source)).size,
+    contradictionCount,
+    confidence: run.confidence,
+    conclusion: run.conclusion,
+    conclusionBasis: run.conclusionBasis,
+  };
+}
+
 export const VALIDATION_RULES = {
   SUPPORTED_MIN_EVIDENCE,
   SUPPORTED_MIN_SOURCES,

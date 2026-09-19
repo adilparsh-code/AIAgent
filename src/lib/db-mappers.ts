@@ -1,13 +1,15 @@
-import type { Agent, Experiment, Opportunity, Product, ProductMetrics, RevenueEntry } from "./types";
+import type { Agent, AgentRunRecord, Experiment, Opportunity, Product, ProductMetrics, RevenueEntry } from "./types";
 import type {
   Evidence,
   EvidenceDataClass,
+  PersistedValidation,
   ProviderRunStatus,
   ResearchFinding,
   ResearchQuery,
   ResearchRun,
   ResearchConclusion,
   ScoreIntegration,
+  SignalStatus,
   ValidationSignal,
 } from "./research-types";
 
@@ -299,6 +301,82 @@ export function mapResearchRun(row: {
       factors: [],
     }),
     errors: row.errors,
+  };
+}
+
+/**
+ * Map a persisted Validation row (one per research run) back to the typed
+ * PersistedValidation shape. Each signal keeps its evidence ids so validation
+ * stays traceable to evidence end to end.
+ */
+export function mapValidation(row: {
+  id: string;
+  researchRunId: string;
+  demandStatus: SignalStatus;
+  demandEvidenceIds: string[];
+  painPointStatus: SignalStatus;
+  painPointEvidenceIds: string[];
+  commercialIntentStatus: SignalStatus;
+  commercialIntentEvidenceIds: string[];
+  trendStatus: SignalStatus;
+  trendEvidenceIds: string[];
+  competitionStatus: SignalStatus;
+  competitionEvidenceIds: string[];
+  evidenceCoverage: number;
+  sourceDiversity: number;
+  contradictionCount: number;
+  confidence: { toNumber?: () => number } | number | string;
+  conclusion: string;
+  conclusionBasis: string;
+  createdAt: Date | string;
+}): PersistedValidation {
+  const signals: ValidationSignal[] = [
+    { key: "demand", label: "Demand", status: row.demandStatus, evidenceIds: row.demandEvidenceIds, basis: "persisted signal" },
+    { key: "pain-point", label: "Pain Point", status: row.painPointStatus, evidenceIds: row.painPointEvidenceIds, basis: "persisted signal" },
+    { key: "commercial-intent", label: "Commercial Intent", status: row.commercialIntentStatus, evidenceIds: row.commercialIntentEvidenceIds, basis: "persisted signal" },
+    { key: "trend", label: "Trend", status: row.trendStatus, evidenceIds: row.trendEvidenceIds, basis: "persisted signal" },
+    { key: "competition", label: "Competition", status: row.competitionStatus, evidenceIds: row.competitionEvidenceIds, basis: "persisted signal" },
+  ];
+  return {
+    id: row.id,
+    researchRunId: row.researchRunId,
+    signals,
+    evidenceCoverage: row.evidenceCoverage,
+    sourceDiversity: row.sourceDiversity,
+    contradictionCount: row.contradictionCount,
+    confidence: decimalToNumber(row.confidence),
+    conclusion: row.conclusion as ResearchConclusion,
+    conclusionBasis: row.conclusionBasis,
+    createdAt: iso(row.createdAt)!,
+  };
+}
+
+/** Map a persisted AgentRun row to the app-level AgentRunRecord shape. */
+export function mapAgentRun(row: {
+  id: string;
+  agentId: string;
+  task: string;
+  status: AgentRunRecord["status"];
+  startedAt: Date | string;
+  completedAt: Date | string | null;
+  input: unknown;
+  output: unknown;
+  errors: string[];
+  metadata: unknown;
+  createdAt: Date | string;
+}): AgentRunRecord {
+  return {
+    id: row.id,
+    agentId: row.agentId,
+    task: row.task,
+    status: row.status,
+    startedAt: iso(row.startedAt)!,
+    completedAt: iso(row.completedAt),
+    input: row.input ?? null,
+    output: row.output ?? null,
+    errors: row.errors,
+    metadata: row.metadata ?? null,
+    createdAt: iso(row.createdAt)!,
   };
 }
 

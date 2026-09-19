@@ -116,6 +116,19 @@ enum ResearchRunStatus {
   FAILED
 }
 
+enum SignalStatus {
+  SUPPORTED
+  MIXED
+  INSUFFICIENT
+}
+
+enum AgentRunStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
 model Opportunity {
   id                         String             @id @default(cuid())
   title                      String
@@ -147,6 +160,10 @@ model Opportunity {
   experiments                Experiment[]
   revenueEntries             RevenueEntry[]
   researchRuns               ResearchRun[]
+  lastResearchRunId          String?
+  lastResearchAt             DateTime?
+  lastResearchConclusion     String?
+  researchRunCount           Int              @default(0)
 
   @@index([status])
   @@index([category])
@@ -249,10 +266,33 @@ model Agent {
   isSample     Boolean     @default(false)
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
+  agentRuns    AgentRun[]
 
+  @@unique([name, type])
   @@index([type])
   @@index([status])
   @@index([isSample])
+}
+
+/// Execution record for an agent task. Designed so future autonomous agents can
+/// be added without schema changes: task, input/output and metadata are open JSON.
+model AgentRun {
+  id          String        @id @default(cuid())
+  agentId     String
+  agent       Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  task        String
+  status      AgentRunStatus @default(RUNNING)
+  startedAt   DateTime      @default(now())
+  completedAt DateTime?
+  input       Json?
+  output      Json?
+  errors      String[]      @default([])
+  metadata    Json?
+  createdAt   DateTime      @default(now())
+
+  @@index([agentId])
+  @@index([status])
+  @@index([startedAt])
 }
 
 model ResearchRun {
@@ -272,8 +312,10 @@ model ResearchRun {
   scoreIntegration     Json?
   errors               String[]          @default([])
   queries              ResearchQuery[]
+  sources              ResearchSource[]
   evidence             Evidence[]
   findings             ResearchFinding[]
+  validation           Validation?
 
   @@index([opportunityId])
   @@index([startedAt])
@@ -294,26 +336,75 @@ model ResearchQuery {
 }
 
 model Evidence {
-  id             String            @id
-  researchRunId  String
-  researchRun    ResearchRun       @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
-  source         String
-  title          String
-  url            String
-  snippet        String            @default("")
-  collectedAt    DateTime
-  relevanceScore Decimal           @db.Decimal(6, 4)
-  qualityScore   Decimal           @db.Decimal(6, 4)
-  hash           String
-  supports       String[]          @default([])
-  contradicts    String[]          @default([])
-  dataClass      String            @default("REAL_LIVE_DATA")
-  findings       ResearchFinding[] @relation("FindingEvidence")
+  id               String            @id
+  researchRunId    String
+  researchRun      ResearchRun       @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
+  researchSourceId String?
+  researchSource   ResearchSource?   @relation(fields: [researchSourceId], references: [id], onDelete: SetNull)
+  source           String
+  title            String
+  url              String
+  snippet          String            @default("")
+  collectedAt      DateTime
+  relevanceScore   Decimal           @db.Decimal(6, 4)
+  qualityScore     Decimal           @db.Decimal(6, 4)
+  hash             String
+  supports         String[]          @default([])
+  contradicts      String[]          @default([])
+  dataClass        String            @default("REAL_LIVE_DATA")
+  findings         ResearchFinding[] @relation("FindingEvidence")
 
   @@unique([researchRunId, hash])
   @@index([researchRunId])
   @@index([hash])
   @@index([source])
+  @@index([researchSourceId])
+}
+
+/// One row per provider per research run: which provider produced which evidence,
+/// with what queries, and whether it succeeded, failed, or was unconfigured.
+model ResearchSource {
+  id            String    @id @default(cuid())
+  researchRunId String
+  researchRun   ResearchRun @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
+  provider      String
+  status        String
+  error         String?
+  evidenceCount Int       @default(0)
+  queries       String[]  @default([])
+  createdAt     DateTime  @default(now())
+  evidence      Evidence[]
+
+  @@unique([researchRunId, provider])
+  @@index([researchRunId])
+  @@index([provider])
+}
+
+/// Persisted validation layer. Every signal keeps the evidence ids it is based on
+/// so validation stays traceable to evidence end to end.
+model Validation {
+  id                          String       @id @default(cuid())
+  researchRunId               String       @unique
+  researchRun                 ResearchRun  @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
+  demandStatus                SignalStatus
+  demandEvidenceIds           String[]     @default([])
+  painPointStatus             SignalStatus
+  painPointEvidenceIds        String[]     @default([])
+  commercialIntentStatus      SignalStatus
+  commercialIntentEvidenceIds String[]     @default([])
+  trendStatus                 SignalStatus
+  trendEvidenceIds            String[]     @default([])
+  competitionStatus           SignalStatus
+  competitionEvidenceIds      String[]     @default([])
+  evidenceCoverage            Int          @default(0)
+  sourceDiversity             Int          @default(0)
+  contradictionCount          Int          @default(0)
+  confidence                  Decimal      @db.Decimal(6, 4)
+  conclusion                  String
+  conclusionBasis             String       @default("")
+  createdAt                   DateTime     @default(now())
+
+  @@index([conclusion])
 }
 
 model ResearchFinding {

@@ -4,6 +4,7 @@ import { researchRepository } from "@/lib/server/repositories/research";
 import { ensureOpportunityExists } from "@/lib/server/ensure-opportunity";
 import { apiError } from "@/lib/api-error";
 import { isDbUnavailableError } from "@/lib/db";
+import { logger } from "@/lib/server/logger";
 
 const MAX_TITLE_LENGTH = 240;
 const MAX_ID_LENGTH = 64;
@@ -37,6 +38,17 @@ export async function GET(request: Request) {
     }
 
     const history = await researchRepository.getByOpportunityId(opportunityId, limit);
+
+    if (searchParams.get("include") === "validation") {
+      const withValidation = await Promise.all(
+        history.map(async (run) => ({
+          ...run,
+          persistedValidation: await researchRepository.getValidationByRunId(run.id),
+        })),
+      );
+      return NextResponse.json(withValidation);
+    }
+
     return NextResponse.json(history);
   } catch (error) {
     if (isDbUnavailableError(error)) {
@@ -71,6 +83,7 @@ export async function POST(request: Request) {
     }
 
     await ensureOpportunityExists(opportunityId);
+    logger.researchStarted(`pending-${Date.now()}`, opportunityId, []);
     const result = await runResearch(opportunityId, title);
     const saved = await researchRepository.save(result);
     return NextResponse.json(saved, { status: saved.status === "FAILED" ? 502 : 200 });

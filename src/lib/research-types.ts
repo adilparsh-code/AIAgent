@@ -120,3 +120,20 @@ export interface ResearchRun {
   errors: string[];
   scoreIntegration: ScoreIntegration;
 }
+
+/**
+ * Relational form of a persisted validation row (one per research run).
+ * Signals keep their evidence ids so validation stays traceable end to end.
+ */
+export interface PersistedValidation {
+  id: string;
+  researchRunId: string;
+  signals: ValidationSignal[];
+  evidenceCoverage: number;
+  sourceDiversity: number;
+  contradictionCount: number;
+  confidence: number;
+  conclusion: ResearchConclusion;
+  conclusionBasis: string;
+  createdAt: string;
+}

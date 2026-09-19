@@ -193,6 +193,23 @@ export interface Agent {
   placeholder: boolean;
 }
 
+// Agent Run Types (Phase 2 persistence — no agent executes anything yet)
+export type AgentRunStatus = "RUNNING" | "COMPLETED" | "FAILED" | "CANCELLED";
+
+export interface AgentRunRecord {
+  id: string;
+  agentId: string;
+  task: string;
+  status: AgentRunStatus;
+  startedAt: string;
+  completedAt: string | null;
+  input: unknown;
+  output: unknown;
+  errors: string[];
+  metadata: unknown;
+  createdAt: string;
+}
+
 // Dashboard Metrics
 export interface DashboardMetrics {
   totalOpportunities: number;
