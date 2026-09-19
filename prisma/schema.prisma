@@ -1,0 +1,325 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum OpportunityStatus {
+  IDEA
+  RESEARCHING
+  VALIDATING
+  VALIDATED
+  BUILDING
+  PUBLISHED
+  EARNING
+  SCALING
+  PAUSED
+  REJECTED
+}
+
+enum HalalStatus {
+  HALAL
+  REVIEW_REQUIRED
+  NOT_ALLOWED
+}
+
+enum BusinessModel {
+  DIGITAL_PRODUCT
+  AFFILIATE
+  SAAS
+  PRINTABLE
+  EDUCATIONAL
+  MARKETPLACE
+}
+
+enum Category {
+  CHILDRENS_BOOKS
+  EDUCATIONAL_RESOURCES
+  TEACHER_RESOURCES
+  PRINTABLES
+  AFFILIATE
+  DIGITAL_TOOLS
+  SAAS
+}
+
+enum ProductType {
+  COLORING_BOOK
+  DRAWING_BOOK
+  ACTIVITY_BOOK
+  WORKSHEET
+  WORKBOOK
+  PRINTABLE
+  TEACHER_RESOURCE
+  DIGITAL_TOOL
+  AFFILIATE_WEBSITE
+  SAAS
+}
+
+enum ProductStatus {
+  PLANNED
+  IN_DEVELOPMENT
+  READY
+  PUBLISHED
+  PAUSED
+  RETIRED
+}
+
+enum ExperimentStatus {
+  PLANNED
+  ACTIVE
+  COMPLETED
+  FAILED
+  PAUSED
+}
+
+enum ExperimentDecision {
+  SCALE
+  ITERATE
+  PAUSE
+  KILL
+}
+
+enum RevenueSource {
+  PRODUCT_SALES
+  AFFILIATE_COMMISSION
+  SAAS_SUBSCRIPTION
+  ADS
+  OTHER
+}
+
+enum AgentType {
+  RESEARCH
+  VALIDATION
+  PRODUCT
+  AFFILIATE
+  SEO
+  QA
+  ANALYTICS
+  GROWTH
+  BUSINESS_MANAGER
+}
+
+enum AgentStatus {
+  ACTIVE
+  IDLE
+  ERROR
+  DISABLED
+}
+
+enum ResearchRunStatus {
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+model Opportunity {
+  id                         String             @id @default(cuid())
+  title                      String
+  category                   Category
+  businessModel              BusinessModel
+  targetAudience             String             @default("")
+  problemSolved              String             @default("")
+  monetizationMethod         String             @default("")
+  estimatedStartupCost       Decimal            @db.Decimal(12, 2)
+  demandScore                Int
+  competitionScore           Int
+  commercialIntentScore      Int
+  automationScore            Int
+  differentiationScore       Int
+  monetizationStrengthScore  Int
+  halalScore                 Int
+  halalStatus                HalalStatus
+  overallScore               Decimal            @db.Decimal(6, 1)
+  confidence                 Int
+  status                     OpportunityStatus
+  evidence                   String[]           @default([])
+  risks                      String[]           @default([])
+  nextAction                 String             @default("")
+  isSample                   Boolean            @default(false)
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
+
+  products                   Product[]
+  experiments                Experiment[]
+  revenueEntries             RevenueEntry[]
+  researchRuns               ResearchRun[]
+
+  @@index([status])
+  @@index([category])
+  @@index([halalStatus])
+  @@index([overallScore])
+  @@index([updatedAt])
+  @@index([isSample])
+}
+
+model Product {
+  id              String        @id @default(cuid())
+  name            String
+  type            ProductType
+  targetAudience  String        @default("")
+  opportunityId   String?
+  opportunity     Opportunity?  @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  status          ProductStatus
+  price           Decimal       @db.Decimal(12, 2)
+  cost            Decimal       @db.Decimal(12, 2)
+  revenue         Decimal       @db.Decimal(12, 2)
+  platform        String        @default("")
+  productUrl      String?
+  affiliateUrl    String?
+  metrics         Json?
+  notes           String        @default("")
+  isSample        Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  revenueEntries  RevenueEntry[]
+
+  @@index([opportunityId])
+  @@index([status])
+  @@index([isSample])
+}
+
+model Experiment {
+  id              String               @id @default(cuid())
+  hypothesis      String
+  opportunityId   String
+  opportunity     Opportunity          @relation(fields: [opportunityId], references: [id], onDelete: Restrict)
+  target          String
+  budget          Decimal              @db.Decimal(12, 2)
+  startDate       DateTime
+  endDate         DateTime?
+  expectedResult  String               @default("")
+  actualResult    String?
+  visitors        Int                  @default(0)
+  leads           Int                  @default(0)
+  clicks          Int                  @default(0)
+  sales           Int                  @default(0)
+  revenue         Decimal              @db.Decimal(12, 2)
+  profit          Decimal              @db.Decimal(12, 2)
+  conversionRate  Decimal              @db.Decimal(8, 4)
+  decision        ExperimentDecision?
+  status          ExperimentStatus
+  isSample        Boolean              @default(false)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+
+  @@index([opportunityId])
+  @@index([status])
+  @@index([updatedAt])
+  @@index([isSample])
+}
+
+model RevenueEntry {
+  id               String         @id @default(cuid())
+  date             DateTime
+  productId        String?
+  product          Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
+  opportunityId    String?
+  opportunity      Opportunity?   @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  revenueSource    RevenueSource
+  grossRevenue     Decimal        @db.Decimal(12, 2)
+  fees             Decimal        @db.Decimal(12, 2)
+  advertisingCost  Decimal        @db.Decimal(12, 2)
+  otherCosts       Decimal        @db.Decimal(12, 2)
+  netRevenue       Decimal        @db.Decimal(12, 2)
+  currency         String         @default("USD")
+  referenceNote    String         @default("")
+  isSample         Boolean        @default(false)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([date])
+  @@index([opportunityId])
+  @@index([productId])
+  @@index([revenueSource])
+  @@index([isSample])
+}
+
+model Agent {
+  id           String      @id @default(cuid())
+  name         String
+  type         AgentType
+  description  String      @default("")
+  status       AgentStatus @default(DISABLED)
+  lastRun      DateTime?
+  placeholder  Boolean     @default(true)
+  isSample     Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([type])
+  @@index([status])
+  @@index([isSample])
+}
+
+model ResearchRun {
+  id                   String            @id
+  opportunityId        String
+  opportunity          Opportunity       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  status               ResearchRunStatus
+  startedAt            DateTime
+  completedAt          DateTime?
+  confidence           Decimal           @db.Decimal(6, 4)
+  providersAttempted   String[]          @default([])
+  providersSucceeded   String[]          @default([])
+  errors               String[]          @default([])
+  queries              ResearchQuery[]
+  evidence             Evidence[]
+  findings             ResearchFinding[]
+
+  @@index([opportunityId])
+  @@index([startedAt])
+  @@index([status])
+}
+
+model ResearchQuery {
+  id             String      @id @default(cuid())
+  researchRunId  String
+  researchRun    ResearchRun @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
+  query          String
+  source         String
+  purpose        String
+  createdAt      DateTime    @default(now())
+
+  @@index([researchRunId])
+  @@index([source])
+}
+
+model Evidence {
+  id             String            @id
+  researchRunId  String
+  researchRun    ResearchRun       @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
+  source         String
+  title          String
+  url            String
+  snippet        String            @default("")
+  collectedAt    DateTime
+  relevanceScore Decimal           @db.Decimal(6, 4)
+  qualityScore   Decimal           @db.Decimal(6, 4)
+  hash           String
+  supports       String[]          @default([])
+  contradicts    String[]          @default([])
+  findings       ResearchFinding[] @relation("FindingEvidence")
+
+  @@unique([researchRunId, hash])
+  @@index([researchRunId])
+  @@index([hash])
+  @@index([source])
+}
+
+model ResearchFinding {
+  id              String      @id
+  researchRunId   String
+  researchRun     ResearchRun @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
+  claim           String
+  summary         String      @default("")
+  confidence      Decimal     @db.Decimal(6, 4)
+  evidenceIds     String[]    @default([])
+  contradictions  String[]    @default([])
+  evidence        Evidence[]  @relation("FindingEvidence")
+
+  @@index([researchRunId])
+}

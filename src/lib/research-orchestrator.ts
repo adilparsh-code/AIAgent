@@ -32,13 +32,13 @@ function buildFindings(evidence: Evidence[]): ResearchFinding[] {
     const key = item.supports[0] ?? "market";
     grouped.set(key, [...(grouped.get(key) ?? []), item]);
   }
-  return [...grouped.entries()].map(([purpose, items], index) => ({
+  return Array.from(grouped.entries()).map(([purpose, items], index) => ({
     id: `finding-${index + 1}-${purpose}`,
     claim: `${purpose} evidence collected from ${items.length} independent result${items.length === 1 ? "" : "s"}`,
-    summary: items.slice(0, 3).map((item) => item.title).join("; "),
-    confidence: Number(Math.min(1, items.reduce((sum, item) => sum + item.qualityScore, 0) / Math.max(1, items.length)).toFixed(2)),
-    evidenceIds: items.map((item) => item.id),
-    contradictions: items.filter((item) => item.contradicts.length).flatMap((item) => item.contradicts),
+    summary: items.slice(0, 3).map((item: Evidence) => item.title).join("; "),
+    confidence: Number(Math.min(1, items.reduce((sum: number, item: Evidence) => sum + item.qualityScore, 0) / Math.max(1, items.length)).toFixed(2)),
+    evidenceIds: items.map((item: Evidence) => item.id),
+    contradictions: items.filter((item: Evidence) => item.contradicts.length).flatMap((item: Evidence) => item.contradicts),
   }));
 }
 

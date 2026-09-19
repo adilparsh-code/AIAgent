@@ -1,0 +1,302 @@
+import type { Agent, Experiment, Opportunity, Product, ProductMetrics, RevenueEntry } from "./types";
+import type { Evidence, ResearchFinding, ResearchQuery, ResearchRun } from "./research-types";
+
+function decimalToNumber(value: { toNumber?: () => number } | number | string): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") return Number(value);
+  if (value && typeof value.toNumber === "function") return value.toNumber();
+  return Number(value);
+}
+
+function iso(value: Date | string | null | undefined): string | null {
+  if (!value) return null;
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+export function mapOpportunity(row: {
+  id: string;
+  title: string;
+  category: Opportunity["category"];
+  businessModel: Opportunity["businessModel"];
+  targetAudience: string;
+  problemSolved: string;
+  monetizationMethod: string;
+  estimatedStartupCost: { toNumber?: () => number } | number | string;
+  demandScore: number;
+  competitionScore: number;
+  commercialIntentScore: number;
+  automationScore: number;
+  differentiationScore: number;
+  monetizationStrengthScore: number;
+  halalScore: number;
+  halalStatus: Opportunity["halalStatus"];
+  overallScore: { toNumber?: () => number } | number | string;
+  confidence: number;
+  status: Opportunity["status"];
+  evidence: string[];
+  risks: string[];
+  nextAction: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}): Opportunity {
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category,
+    businessModel: row.businessModel,
+    targetAudience: row.targetAudience,
+    problemSolved: row.problemSolved,
+    monetizationMethod: row.monetizationMethod,
+    estimatedStartupCost: decimalToNumber(row.estimatedStartupCost),
+    demandScore: row.demandScore,
+    competitionScore: row.competitionScore,
+    commercialIntentScore: row.commercialIntentScore,
+    automationScore: row.automationScore,
+    differentiationScore: row.differentiationScore,
+    monetizationStrengthScore: row.monetizationStrengthScore,
+    halalScore: row.halalScore,
+    halalStatus: row.halalStatus,
+    overallScore: decimalToNumber(row.overallScore),
+    confidence: row.confidence,
+    status: row.status,
+    evidence: row.evidence,
+    risks: row.risks,
+    nextAction: row.nextAction,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+  };
+}
+
+export function mapProduct(row: {
+  id: string;
+  name: string;
+  type: Product["type"];
+  targetAudience: string;
+  opportunityId: string | null;
+  status: Product["status"];
+  price: { toNumber?: () => number } | number | string;
+  cost: { toNumber?: () => number } | number | string;
+  revenue: { toNumber?: () => number } | number | string;
+  platform: string;
+  productUrl: string | null;
+  affiliateUrl: string | null;
+  metrics: unknown;
+  notes: string;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}): Product {
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    targetAudience: row.targetAudience,
+    opportunityId: row.opportunityId,
+    status: row.status,
+    price: decimalToNumber(row.price),
+    cost: decimalToNumber(row.cost),
+    revenue: decimalToNumber(row.revenue),
+    platform: row.platform,
+    productUrl: row.productUrl,
+    affiliateUrl: row.affiliateUrl,
+    metrics: (row.metrics as ProductMetrics | null) ?? {},
+    notes: row.notes,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+  };
+}
+
+export function mapExperiment(row: {
+  id: string;
+  hypothesis: string;
+  opportunityId: string;
+  target: string;
+  budget: { toNumber?: () => number } | number | string;
+  startDate: Date | string;
+  endDate: Date | string | null;
+  expectedResult: string;
+  actualResult: string | null;
+  visitors: number;
+  leads: number;
+  clicks: number;
+  sales: number;
+  revenue: { toNumber?: () => number } | number | string;
+  profit: { toNumber?: () => number } | number | string;
+  conversionRate: { toNumber?: () => number } | number | string;
+  decision: Experiment["decision"];
+  status: Experiment["status"];
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}): Experiment {
+  return {
+    id: row.id,
+    hypothesis: row.hypothesis,
+    opportunityId: row.opportunityId,
+    target: row.target,
+    budget: decimalToNumber(row.budget),
+    startDate: iso(row.startDate)!,
+    endDate: iso(row.endDate),
+    expectedResult: row.expectedResult,
+    actualResult: row.actualResult,
+    visitors: row.visitors,
+    leads: row.leads,
+    clicks: row.clicks,
+    sales: row.sales,
+    revenue: decimalToNumber(row.revenue),
+    profit: decimalToNumber(row.profit),
+    conversionRate: decimalToNumber(row.conversionRate),
+    decision: row.decision,
+    status: row.status,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+  };
+}
+
+export function mapRevenue(row: {
+  id: string;
+  date: Date | string;
+  productId: string | null;
+  opportunityId: string | null;
+  revenueSource: RevenueEntry["revenueSource"];
+  grossRevenue: { toNumber?: () => number } | number | string;
+  fees: { toNumber?: () => number } | number | string;
+  advertisingCost: { toNumber?: () => number } | number | string;
+  otherCosts: { toNumber?: () => number } | number | string;
+  netRevenue: { toNumber?: () => number } | number | string;
+  currency: string;
+  referenceNote: string;
+}): RevenueEntry {
+  return {
+    id: row.id,
+    date: iso(row.date)!,
+    productId: row.productId,
+    opportunityId: row.opportunityId,
+    revenueSource: row.revenueSource,
+    grossRevenue: decimalToNumber(row.grossRevenue),
+    fees: decimalToNumber(row.fees),
+    advertisingCost: decimalToNumber(row.advertisingCost),
+    otherCosts: decimalToNumber(row.otherCosts),
+    netRevenue: decimalToNumber(row.netRevenue),
+    currency: row.currency,
+    referenceNote: row.referenceNote,
+  };
+}
+
+export function mapAgent(row: {
+  id: string;
+  name: string;
+  type: Agent["type"];
+  description: string;
+  status: Agent["status"];
+  lastRun: Date | string | null;
+  placeholder: boolean;
+}): Agent {
+  return {
+    id: row.id,
+    name: row.name,
+    type: row.type,
+    description: row.description,
+    status: row.status,
+    lastRun: iso(row.lastRun),
+    placeholder: row.placeholder,
+  };
+}
+
+export function mapResearchRun(row: {
+  id: string;
+  opportunityId: string;
+  status: ResearchRun["status"];
+  startedAt: Date | string;
+  completedAt: Date | string | null;
+  confidence: { toNumber?: () => number } | number | string;
+  providersAttempted: string[];
+  providersSucceeded: string[];
+  errors: string[];
+  queries: Array<{ query: string; source: string; purpose: string }>;
+  evidence: Array<{
+    id: string;
+    source: string;
+    title: string;
+    url: string;
+    snippet: string;
+    collectedAt: Date | string;
+    relevanceScore: { toNumber?: () => number } | number | string;
+    qualityScore: { toNumber?: () => number } | number | string;
+    hash: string;
+    supports: string[];
+    contradicts: string[];
+  }>;
+  findings: Array<{
+    id: string;
+    claim: string;
+    summary: string;
+    confidence: { toNumber?: () => number } | number | string;
+    evidenceIds: string[];
+    contradictions: string[];
+  }>;
+}): ResearchRun {
+  return {
+    id: row.id,
+    opportunityId: row.opportunityId,
+    status: row.status,
+    startedAt: iso(row.startedAt)!,
+    completedAt: iso(row.completedAt),
+    queries: row.queries.map((q): ResearchQuery => ({
+      query: q.query,
+      source: q.source,
+      purpose: q.purpose as ResearchQuery["purpose"],
+    })),
+    evidence: row.evidence.map((item): Evidence => ({
+      id: item.id,
+      source: item.source,
+      title: item.title,
+      url: item.url,
+      snippet: item.snippet,
+      collectedAt: iso(item.collectedAt)!,
+      relevanceScore: decimalToNumber(item.relevanceScore),
+      qualityScore: decimalToNumber(item.qualityScore),
+      hash: item.hash,
+      supports: item.supports,
+      contradicts: item.contradicts,
+    })),
+    findings: row.findings.map((item): ResearchFinding => ({
+      id: item.id,
+      claim: item.claim,
+      summary: item.summary,
+      confidence: decimalToNumber(item.confidence),
+      evidenceIds: item.evidenceIds,
+      contradictions: item.contradictions,
+    })),
+    confidence: decimalToNumber(row.confidence),
+    providersAttempted: row.providersAttempted,
+    providersSucceeded: row.providersSucceeded,
+    errors: row.errors,
+  };
+}
+
+export function opportunityCreateData(item: Omit<Opportunity, "id" | "createdAt" | "updatedAt">, id?: string) {
+  return {
+    ...(id ? { id } : {}),
+    title: item.title,
+    category: item.category,
+    businessModel: item.businessModel,
+    targetAudience: item.targetAudience,
+    problemSolved: item.problemSolved,
+    monetizationMethod: item.monetizationMethod,
+    estimatedStartupCost: item.estimatedStartupCost,
+    demandScore: item.demandScore,
+    competitionScore: item.competitionScore,
+    commercialIntentScore: item.commercialIntentScore,
+    automationScore: item.automationScore,
+    differentiationScore: item.differentiationScore,
+    monetizationStrengthScore: item.monetizationStrengthScore,
+    halalScore: item.halalScore,
+    halalStatus: item.halalStatus,
+    overallScore: item.overallScore,
+    confidence: item.confidence,
+    status: item.status,
+    evidence: item.evidence,
+    risks: item.risks,
+    nextAction: item.nextAction,
+    isSample: false,
+  };
+}

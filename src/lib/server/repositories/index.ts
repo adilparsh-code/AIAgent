@@ -1,6 +1,8 @@
+import "server-only";
+
 export { opportunityRepository } from "./opportunities";
+export { productRepository } from "./products";
 export { experimentRepository } from "./experiments";
 export { revenueRepository } from "./revenue";
-export { productRepository } from "./products";
 export { agentRepository } from "./agents";
-export type { Repository } from "./base";
+export { researchRepository } from "./research";

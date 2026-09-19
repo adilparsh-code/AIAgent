@@ -1,79 +1,66 @@
 import type { Experiment } from "../types";
 import type { Repository } from "./base";
-import { generateId, getCurrentTimestamp } from "./base";
 import { SAMPLE_EXPERIMENTS } from "../data/catalog";
+import { apiGet, apiSend } from "../http";
 
-class InMemoryExperimentRepository implements Repository<Experiment> {
-  private experiments: Map<string, Experiment>;
-  private isSampleData: Map<string, boolean>;
+function sampleById(id: string) {
+  return SAMPLE_EXPERIMENTS.find((item) => item.id === id) ?? null;
+}
 
-  constructor() {
-    this.experiments = new Map();
-    this.isSampleData = new Map();
-    
-    // Initialize with sample data
-    SAMPLE_EXPERIMENTS.forEach(exp => {
-      this.experiments.set(exp.id, { ...exp });
-      this.isSampleData.set(exp.id, true);
-    });
-  }
-
+class HttpExperimentRepository implements Repository<Experiment> {
   async getAll(): Promise<Experiment[]> {
-    return Array.from(this.experiments.values()).sort((a, b) => 
-      new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+    let persisted: Experiment[] = [];
+    try {
+      persisted = await apiGet<Experiment[]>("/api/experiments");
+    } catch {
+      persisted = [];
+    }
+    const persistedIds = new Set(persisted.map((item) => item.id));
+    const samples = SAMPLE_EXPERIMENTS.filter((item) => !persistedIds.has(item.id));
+    return [...persisted, ...samples].sort(
+      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
     );
   }
 
   async getByOpportunityId(opportunityId: string): Promise<Experiment[]> {
-    return Array.from(this.experiments.values())
-      .filter(exp => exp.opportunityId === opportunityId)
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    const all = await this.getAll();
+    return all.filter((item) => item.opportunityId === opportunityId);
   }
 
   async getById(id: string): Promise<Experiment | null> {
-    const exp = this.experiments.get(id);
-    return exp ? { ...exp } : null;
+    try {
+      return await apiGet<Experiment>(`/api/experiments/${id}`);
+    } catch {
+      return sampleById(id);
+    }
   }
 
   async isSample(id: string): Promise<boolean> {
-    return this.isSampleData.get(id) || false;
+    return Boolean(sampleById(id));
   }
 
-  async create(item: Omit<Experiment, 'id' | 'createdAt' | 'updatedAt'>): Promise<Experiment> {
-    const id = `exp-${generateId().slice(0, 8)}`;
-    const now = getCurrentTimestamp();
-
-    const newExperiment: Experiment = {
-      ...item,
-      id,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    this.experiments.set(id, newExperiment);
-    this.isSampleData.set(id, false);
-    
-    return { ...newExperiment };
+  async create(item: Omit<Experiment, "id" | "createdAt" | "updatedAt">): Promise<Experiment> {
+    return apiSend<Experiment>("/api/experiments", "POST", item);
   }
 
   async update(id: string, updates: Partial<Experiment>): Promise<Experiment | null> {
-    const existing = this.experiments.get(id);
-    if (!existing) return null;
-
-    const updated: Experiment = {
-      ...existing,
-      ...updates,
-      updatedAt: getCurrentTimestamp(),
-    };
-
-    this.experiments.set(id, updated);
-    return { ...updated };
+    if (sampleById(id)) return null;
+    try {
+      return await apiSend<Experiment>(`/api/experiments/${id}`, "PATCH", updates);
+    } catch {
+      return null;
+    }
   }
 
   async delete(id: string): Promise<boolean> {
-    if (this.isSampleData.get(id)) return false;
-    return this.experiments.delete(id);
+    if (sampleById(id)) return false;
+    try {
+      await apiSend(`/api/experiments/${id}`, "DELETE");
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
-export const experimentRepository = new InMemoryExperimentRepository();
+export const experimentRepository = new HttpExperimentRepository();

@@ -32,6 +32,15 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
       setEditForm(data);
       const sample = await opportunityRepository.isSample(params.id);
       setIsSample(sample);
+      try {
+        const historyResponse = await fetch(`/api/research?opportunityId=${encodeURIComponent(params.id)}&latest=1`);
+        if (historyResponse.ok) {
+          const latest = await historyResponse.json();
+          if (latest) setResearchRun(latest as ResearchRun);
+        }
+      } catch {
+        // History is optional when the database is not configured.
+      }
       setLoading(false);
     }
     loadOpportunity();

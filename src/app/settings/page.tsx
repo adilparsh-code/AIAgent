@@ -9,7 +9,8 @@ export default function SettingsPage() {
         <ul className="list-disc space-y-1 p-5 pl-8 text-sm text-slate-600">
           <li>Use `.env.local` for local secrets (ignored by git).</li>
           <li>Configure production secrets in Vercel project settings.</li>
-          <li>No live integrations are enabled in Phase 1.</li>
+          <li>Set `DATABASE_URL` on the server only. Never use `NEXT_PUBLIC_DATABASE_URL`.</li>
+          <li>Copy `.env.example` and fill in your own PostgreSQL credentials. Do not commit `.env`.</li>
         </ul>
       </Card>
     </div>
