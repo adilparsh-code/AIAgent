@@ -129,6 +129,26 @@ enum AgentRunStatus {
   CANCELLED
 }
 
+enum DiscoveryRunStatus {
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
+
+enum DiscoveryCandidateStatus {
+  GENERATED
+  RESEARCHING
+  RESEARCHED
+  SKIPPED_DUPLICATE
+}
+
+enum HandoffStatus {
+  NOT_READY
+  READY
+  PREPARED
+}
+
 model Opportunity {
   id                         String             @id @default(cuid())
   title                      String
@@ -160,6 +180,7 @@ model Opportunity {
   experiments                Experiment[]
   revenueEntries             RevenueEntry[]
   researchRuns               ResearchRun[]
+  discoveryCandidates        DiscoveryCandidate[]
   lastResearchRunId          String?
   lastResearchAt             DateTime?
   lastResearchConclusion     String?
@@ -418,5 +439,65 @@ model ResearchFinding {
   contradictions  String[]    @default([])
   evidence        Evidence[]  @relation("FindingEvidence")
 
+  @@index([researchRunId])
+}
+
+/// One autonomous discovery job: topic/category in, ranked opportunity briefs out.
+model DiscoveryRun {
+  id                   String               @id @default(cuid())
+  topic                String
+  category             String
+  status               DiscoveryRunStatus
+  startedAt            DateTime             @default(now())
+  completedAt          DateTime?
+  candidateCount       Int                  @default(0)
+  researchedCount      Int                  @default(0)
+  readyForHandoffCount Int                  @default(0)
+  errors               String[]             @default([])
+  notes                String               @default("")
+  candidates           DiscoveryCandidate[]
+
+  @@index([status])
+  @@index([startedAt])
+  @@index([category])
+}
+
+/// A discovery candidate researched through the existing orchestrator.
+/// Evidence, validation, and scores live on the linked ResearchRun — this row
+/// only stores discovery metadata, ranking, the brief, and the handoff contract.
+model DiscoveryCandidate {
+  id                    String                    @id @default(cuid())
+  discoveryRunId        String
+  discoveryRun          DiscoveryRun              @relation(fields: [discoveryRunId], references: [id], onDelete: Cascade)
+  title                 String
+  category              String
+  problemHypothesis     String                    @default("")
+  targetAudience        String                    @default("")
+  normalizedKey         String
+  status                DiscoveryCandidateStatus  @default(GENERATED)
+  opportunityId         String?
+  opportunity           Opportunity?              @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  researchRunId         String?
+  rank                  Int?
+  rankingScore          Decimal?                  @db.Decimal(6, 1)
+  confidence            Decimal?                  @db.Decimal(6, 4)
+  validationConclusion  String?
+  evidenceCount         Int                       @default(0)
+  evidenceCoverage      Int                       @default(0)
+  sourceDiversity       Int                       @default(0)
+  contradictionCount    Int                       @default(0)
+  brief                 Json?
+  rankingBreakdown      Json?
+  handoffPayload        Json?
+  handoffStatus         HandoffStatus             @default(NOT_READY)
+  errors                String[]                  @default([])
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  @@unique([discoveryRunId, normalizedKey])
+  @@index([discoveryRunId])
+  @@index([status])
+  @@index([handoffStatus])
+  @@index([opportunityId])
   @@index([researchRunId])
 }

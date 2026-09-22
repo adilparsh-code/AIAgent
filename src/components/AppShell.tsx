@@ -13,11 +13,13 @@ import {
   Bot,
   Settings,
   Menu,
+  Search,
   X,
 } from "lucide-react";
 
 const NAV = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
+  { title: "Discovery", href: "/discovery", icon: Search },
   { title: "Opportunities", href: "/opportunities", icon: Lightbulb },
   { title: "Products", href: "/products", icon: Package },
   { title: "Experiments", href: "/experiments", icon: FlaskConical },
@@ -69,7 +71,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
           <div className="font-bold">AI Income Lab</div>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-            Phase 1 · SAMPLE DATA
+            Phase 4 · SAMPLE DATA
           </span>
         </div>
       </header>

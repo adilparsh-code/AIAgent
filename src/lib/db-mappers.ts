@@ -1,5 +1,16 @@
 import type { Agent, AgentRunRecord, Experiment, Opportunity, Product, ProductMetrics, RevenueEntry } from "./types";
 import type {
+  DiscoveryCandidateStatus,
+  DiscoveryCategory,
+  DiscoveryRunResult,
+  DiscoveryRunStatus,
+  EvaluatedCandidateView,
+  HandoffStatus,
+  IncomeLabHandoff,
+  OpportunityBrief,
+  RankingBreakdown,
+} from "./discovery-types";
+import type {
   Evidence,
   EvidenceDataClass,
   PersistedValidation,
@@ -377,6 +388,97 @@ export function mapAgentRun(row: {
     errors: row.errors,
     metadata: row.metadata ?? null,
     createdAt: iso(row.createdAt)!,
+  };
+}
+
+export function mapDiscoveryCandidate(row: {
+  id: string;
+  discoveryRunId: string;
+  title: string;
+  category: string;
+  problemHypothesis: string;
+  targetAudience: string;
+  normalizedKey: string;
+  status: DiscoveryCandidateStatus;
+  opportunityId: string | null;
+  researchRunId: string | null;
+  rank: number | null;
+  rankingScore: { toNumber?: () => number } | number | string | null;
+  confidence: { toNumber?: () => number } | number | string | null;
+  validationConclusion: string | null;
+  evidenceCount: number;
+  evidenceCoverage: number;
+  sourceDiversity: number;
+  contradictionCount: number;
+  brief: unknown;
+  rankingBreakdown: unknown;
+  handoffPayload: unknown;
+  handoffStatus: HandoffStatus;
+  errors: string[];
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}): EvaluatedCandidateView {
+  return {
+    id: row.id,
+    title: row.title,
+    category: row.category as DiscoveryCategory,
+    problemHypothesis: row.problemHypothesis,
+    targetAudience: row.targetAudience,
+    normalizedKey: row.normalizedKey,
+    status: row.status,
+    opportunityId: row.opportunityId,
+    researchRunId: row.researchRunId,
+    rank: row.rank,
+    rankingScore: row.rankingScore == null ? null : decimalToNumber(row.rankingScore),
+    confidence: row.confidence == null ? null : decimalToNumber(row.confidence),
+    validationConclusion: (row.validationConclusion as EvaluatedCandidateView["validationConclusion"]) ?? null,
+    evidenceCount: row.evidenceCount,
+    evidenceCoverage: row.evidenceCoverage,
+    sourceDiversity: row.sourceDiversity,
+    contradictionCount: row.contradictionCount,
+    brief: jsonValue<OpportunityBrief | null>(row.brief, null),
+    rankingBreakdown: jsonValue<RankingBreakdown | null>(row.rankingBreakdown, null),
+    handoffPayload: jsonValue<IncomeLabHandoff | null>(row.handoffPayload, null),
+    handoffStatus: row.handoffStatus,
+    errors: row.errors,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+  };
+}
+
+export function mapDiscoveryRun(row: {
+  id: string;
+  topic: string;
+  category: string;
+  status: DiscoveryRunStatus;
+  startedAt: Date | string;
+  completedAt: Date | string | null;
+  candidateCount: number;
+  researchedCount: number;
+  readyForHandoffCount: number;
+  errors: string[];
+  notes: string;
+  candidates?: Parameters<typeof mapDiscoveryCandidate>[0][];
+}): DiscoveryRunResult {
+  const candidates = (row.candidates ?? []).map(mapDiscoveryCandidate);
+  return {
+    id: row.id,
+    topic: row.topic,
+    category: row.category as DiscoveryCategory,
+    status: row.status,
+    startedAt: iso(row.startedAt)!,
+    completedAt: iso(row.completedAt),
+    candidateCount: row.candidateCount,
+    researchedCount: row.researchedCount,
+    readyForHandoffCount: row.readyForHandoffCount,
+    errors: row.errors,
+    notes: row.notes,
+    candidates: candidates.sort((a, b) => {
+      if (a.rank == null && b.rank == null) return 0;
+      if (a.rank == null) return 1;
+      if (b.rank == null) return -1;
+      return a.rank - b.rank;
+    }),
   };
 }
 
