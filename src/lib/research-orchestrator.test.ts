@@ -39,6 +39,7 @@ describe("runResearch", () => {
     expect(result.providersSucceeded).toEqual(["brave", "reddit"]);
     expect(result.evidence).toHaveLength(2);
     expect(result.findings[0]?.evidenceIds).toEqual(["a", "c"]);
+    expect(result.findings[0]?.claim).toBe("demand evidence collected from 2 results");
   });
 
   it("degrades to PARTIAL when one provider fails but evidence remains", async () => {
