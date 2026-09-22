@@ -46,7 +46,7 @@ function buildFindings(evidence: Evidence[]): ResearchFinding[] {
   }
   return Array.from(grouped.entries()).map(([purpose, items], index) => ({
     id: `finding-${index + 1}-${purpose}`,
-    claim: `${purpose} evidence collected from ${items.length} independent result${items.length === 1 ? "" : "s"}`,
+    claim: `${purpose} evidence collected from ${items.length} result${items.length === 1 ? "" : "s"}`,
     summary: items.slice(0, 3).map((item) => item.title).join("; "),
     confidence: Number(
       (items.reduce((sum, item) => sum + item.qualityScore, 0) / Math.max(1, items.length)).toFixed(2),
