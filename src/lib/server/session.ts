@@ -31,6 +31,57 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+
+/** Safe session metadata returned to the authenticated user. Tokens and hashes are never exposed. */
+export interface SessionInfo {
+  id: string;
+  createdAt: string;
+  lastUsedAt: string;
+  expiresAt: string;
+  isCurrent: boolean;
+}
+
+/** List only the caller's own sessions, marking the current session without exposing secrets. */
+export async function listUserSessions(
+  userId: string,
+  currentSessionId: string | null,
+): Promise<SessionInfo[]> {
+  const sessions = await getPrisma().session.findMany({
+    where: { userId, expiresAt: { gt: new Date() } },
+    select: { id: true, createdAt: true, lastUsedAt: true, expiresAt: true },
+    orderBy: { lastUsedAt: "desc" },
+  });
+  return sessions.map((session) => ({
+    id: session.id,
+    createdAt: session.createdAt.toISOString(),
+    lastUsedAt: session.lastUsedAt.toISOString(),
+    expiresAt: session.expiresAt.toISOString(),
+    isCurrent: session.id === currentSessionId,
+  }));
+}
+
+/** Revoke one session only when it belongs to the authenticated user. */
+export async function revokeUserSession(userId: string, sessionId: string): Promise<boolean> {
+  const result = await getPrisma().session.deleteMany({
+    where: { id: sessionId, userId },
+  });
+  return result.count > 0;
+}
+
+/** Revoke every session belonging to the user, optionally preserving the current session. */
+export async function revokeAllUserSessions(
+  userId: string,
+  exceptSessionId?: string | null,
+): Promise<number> {
+  const result = await getPrisma().session.deleteMany({
+    where: {
+      userId,
+      ...(exceptSessionId ? { id: { not: exceptSessionId } } : {}),
+    },
+  });
+  return result.count;
+}
+
 /** Create a server-side session row and return the raw token (never persisted in plaintext). */
 export async function createSession(userId: string): Promise<{ token: string; expiresAt: Date }> {
   const token = randomBytes(32).toString("base64url");
@@ -82,7 +133,11 @@ export async function readSessionToken(): Promise<string | null> {
  * account is DISABLED. Sliding renewal of lastUsedAt keeps rows fresh but is
  * best-effort (never blocks the request).
  */
-export async function getSessionUser(): Promise<AuthenticatedUser | null> {
+
+/** Resolve both the current session id and authenticated identity. */
+export async function getSessionContext(): Promise<
+  { sessionId: string; user: AuthenticatedUser } | null
+> {
   const token = await readSessionToken();
   if (!token) return null;
 
@@ -96,6 +151,7 @@ export async function getSessionUser(): Promise<AuthenticatedUser | null> {
     await prisma.session.delete({ where: { id: session.id } }).catch(() => undefined);
     return null;
   }
+
   const { id, email, name, role, status } = session.user;
   if (status !== "ACTIVE") return null;
 
@@ -103,9 +159,16 @@ export async function getSessionUser(): Promise<AuthenticatedUser | null> {
     .update({ where: { id: session.id }, data: { lastUsedAt: new Date() } })
     .catch(() => undefined);
 
-  return { id, email, name, role, status };
+  return {
+    sessionId: session.id,
+    user: { id, email, name, role, status },
+  };
 }
 
+export async function getSessionUser(): Promise<AuthenticatedUser | null> {
+  const context = await getSessionContext();
+  return context?.user ?? null;
+}
 export interface NextResponseLike {
   cookies: {
     set(options: {
