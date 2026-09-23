@@ -394,6 +394,17 @@ rules, never AI score magic:
 - **Migration**: `20260923140000_phase6c_learning_reranking` — additive (`RankingSnapshot` table,
   ranking columns on `Opportunity`); no resets, no history rewritten.
 
+## Phase 6B — Session hardening and account session management
+
+Phase 6A authentication is extended with user-visible session management without changing the authentication token model.
+
+- **Session inventory:** `GET /api/auth/sessions` lists only the authenticated user's unexpired sessions with safe metadata (created, last-used, expiry, and current-session marker). Raw tokens and token hashes are never returned.
+- **Selective revocation:** `DELETE /api/auth/sessions` with a `sessionId` revokes that session only when it belongs to the authenticated user. Cross-user ids resolve to 404.
+- **Sign out everywhere else:** `DELETE /api/auth/sessions` with `{ "all": true }` revokes every other session while preserving the current session. Existing `/api/auth/logout` remains the operation for ending the current session.
+- **Server-side ownership:** session revocation is enforced by `userId + sessionId` in the database; client-supplied user ids are never accepted.
+- **Security:** session tokens and hashes never appear in API responses, localStorage, query strings, client bundles, or logs.
+- **Tests:** route-level tests cover authentication, safe metadata, single-session revocation, current-session protection, revoke-all semantics, cross-user isolation, and mock isolation.
+
 ## Intentionally deferred
 
 - Autonomous agent execution (AgentRun rows exist for audit; no agent logic runs yet).
