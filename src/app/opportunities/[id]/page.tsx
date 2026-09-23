@@ -10,6 +10,7 @@ import type { Opportunity } from "@/lib/types";
 import type { ResearchRun } from "@/lib/research-types";
 import { Badge, Card, CardHeader, ScoreBar, Button, statusBadgeClass } from "@/components/ui";
 import { ResearchResultCard } from "@/components/ResearchResultCard";
+import { OpportunityLearning } from "@/components/OpportunityLearning";
 import { formatRelativeTime } from "@/lib/format";
 
 export default function OpportunityDetailPage({ params }: { params: { id: string } }) {
@@ -243,6 +244,7 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
         </div>
       </Card>
       {researchRun && <ResearchResultCard run={researchRun} />}
+      {!isSample && <OpportunityLearning opportunityId={params.id} />}
       {researchHistory.length > 1 && (
           <Card>
             <CardHeader title="Research run history" subtitle={`${researchHistory.length} recent runs — click a run to inspect it`} />

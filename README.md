@@ -349,14 +349,57 @@ without removing anything:
   summary card distinguishing recorded vs calculated vs missing, a relative conversions bar built from
   recorded data only, and an append-metric form.
 
+## Phase 6C — Experiment feedback → learning + re-ranking
+
+Real experiment outcomes now feed back into opportunity ranking — through transparent, deterministic
+rules, never AI score magic:
+
+- **Feedback contract** (`src/lib/experiment-learning.ts`, `feedbackVersion: 2`, persisted under each
+  experiment's Phase 5 `feedback.learning`): records the measurement period, recorded totals (raw),
+  calculated derived metrics, sufficiency assessment, learning signals, data class
+  (`REAL_DATA`/`ESTIMATED_DATA` — estimated data never receives the weight of real data), decision,
+  research implications, and bounded ranking impact.
+- **Learning signals** derive only from recorded evidence via explicit rules: demand (sufficient
+  observations with conversions/traffic), conversion (conversion rate vs `DECISION_RULES`),
+  monetization (recorded revenue), unit economics (profit/ROI), plus
+  `INSUFFICIENT_EXPERIMENT_DATA`. No signal is generated merely because a field exists.
+- **Sufficiency gate** (`SUFFICIENCY_THRESHOLDS`): INSUFFICIENT / LOW_SIGNAL / MEANINGFUL_SIGNAL /
+  STRONG_SIGNAL from record count, observations, conversions, revenue, and estimated-record share.
+  Below `MEANINGFUL_SIGNAL` an experiment **cannot move the ranking** — one tiny experiment can
+  never dominate. All thresholds are documented constants, not scattered magic numbers.
+- **Multi-experiment aggregation**: all of an opportunity's experiments are aggregated (never just
+  the latest) with explicit conflict handling — `MIXED_EXPERIMENT_EVIDENCE` when directions disagree,
+  `EXPERIMENT_CONTRADICTS_RESEARCH` when recorded results contradict the research conclusion.
+- **Ranking formula** (extends, never replaces, the Phase 1 weighted research score):
+  `effective score = clamp(research overallScore + bounded experiment delta, 0–100)` where the delta
+  is capped at **±10** (`MAX_EXPERIMENT_SCORE_IMPACT`, justified in-code and test-asserted).
+  `overallScore` itself is never mutated; the delta is stored separately, so reranks are idempotent.
+- **Validation context** classifies `RESEARCH_SUPPORTED` / `EXPERIMENT_SUPPORTED` / `BOTH_SUPPORTED`
+  / `MIXED_EVIDENCE` / `INSUFFICIENT` — an experiment never flips research validation by itself.
+- **Confidence** stays separate from score and combines research confidence with an experiment
+  confidence that grows with sufficiency and consistency and shrinks with contradictions.
+- **Deterministic re-ranking** (`rerankOpportunities`): batched queries (3 per run — no N+1),
+  sorted deterministically, every entry carries an explanation naming the signals and experiments
+  behind any change. `POST /api/opportunities/:id/rerank` is manual and owner-scoped; nothing runs
+  automatically and no external actions are triggered.
+- **Audit trail**: every rerank persists append-only `RankingSnapshot` rows (previous/new score and
+  rank, delta, validation context, confidence, reason, contributing signals, experiment ids); the
+  opportunity keeps `lastRankingSnapshotId` + `lastRankingAt`.
+- **APIs** (all authenticated, owner-scoped, Phase 6A 404-masking): `POST
+  /api/experiments/:id/feedback`, `GET /api/opportunities/:id/feedback`, `GET
+  /api/opportunities/:id/ranking`, `POST /api/opportunities/:id/rerank`. Client-supplied scores are
+  never accepted — the server computes everything.
+- **UI**: the opportunity page gained a learning/evidence panel (research evidence, experiment
+  evidence, learning signals, contradictions, ranking change, reason) with a manual rerank button.
+- **Migration**: `20260923140000_phase6c_learning_reranking` — additive (`RankingSnapshot` table,
+  ranking columns on `Opportunity`); no resets, no history rewritten.
+
 ## Intentionally deferred
 
 - Autonomous agent execution (AgentRun rows exist for audit; no agent logic runs yet).
 - Executing AI Income Lab implementation / revenue actions after handoff.
-- Cross-run evidence correlation and historical trend storage.
 - Automatic application of suggested scores (still a human-confirmed suggestion).
 - OAuth/SSO and email verification; password reset flow.
 - Distributed rate limiting (the in-memory boundary protects a single instance only) and
   account-recovery flows.
-- Automatic re-ranking from experiment feedback (deferred to Phase 6C by design).
-- Broader provider coverage and richer query strategies.
+- Cross-run evidence correlation and historical trend storage.

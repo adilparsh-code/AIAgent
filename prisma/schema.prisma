@@ -258,10 +258,16 @@ model Opportunity {
   researchRuns           ResearchRun[]
   handoffs               Handoff[]
   discoveryCandidates    DiscoveryCandidate[]
+  rankingSnapshots       RankingSnapshot[]
   lastResearchRunId      String?
   lastResearchAt         DateTime?
   lastResearchConclusion String?
   researchRunCount       Int                  @default(0)
+  // Phase 6C learning layer: bounded experiment adjustment + audit linkage.
+  experimentScoreDelta   Decimal?             @db.Decimal(5, 1)
+  experimentEvidence     Json?
+  lastRankingAt          DateTime?
+  lastRankingSnapshotId  String?
 
   @@index([status])
   @@index([category])
@@ -270,6 +276,32 @@ model Opportunity {
   @@index([updatedAt])
   @@index([isSample])
   @@index([ownerId])
+  @@index([lastRankingAt])
+}
+
+/// Phase 6C — auditable re-ranking record. Snapshots are append-only so every
+/// meaningful ranking change stays explainable after the fact.
+model RankingSnapshot {
+  id                  String      @id @default(cuid())
+  opportunityId       String
+  opportunity         Opportunity @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  ownerId             String?
+  previousScore       Decimal?    @db.Decimal(6, 1)
+  newScore            Decimal     @db.Decimal(6, 1)
+  previousRank        Int?
+  newRank             Int?
+  experimentDelta     Decimal     @db.Decimal(5, 1)
+  contradiction       String      @default("NONE")
+  validationContext   String      @default("INSUFFICIENT")
+  confidence          Decimal     @db.Decimal(4, 2)
+  reason              String
+  contributingSignals Json
+  experimentIds       String[]    @default([])
+  createdAt           DateTime    @default(now())
+
+  @@index([opportunityId])
+  @@index([ownerId])
+  @@index([createdAt])
 }
 
 model Product {
