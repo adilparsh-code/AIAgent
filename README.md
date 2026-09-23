@@ -316,6 +316,18 @@ handoff → experiment → evaluate → feedback) is unchanged — it is now own
   `Session`, ownership columns and indexes. Existing Phase 1–5 rows keep working (owners are NULL
   until explicitly reassigned); nothing is reset or rewritten.
 
+## Phase 6B — Session hardening and account session management
+
+Phase 6A authentication is now extended with user-visible session management without introducing a new dependency or changing the authentication token model.
+
+- **Session inventory:** GET `/api/auth/sessions` lists only the authenticated user's unexpired sessions with safe metadata (created, last-used, expiry, and current-session marker). Raw tokens and token hashes are never returned.
+- **Selective revocation:** DELETE `/api/auth/sessions` with a `sessionId` revokes that session only when it belongs to the authenticated user. Cross-user ids resolve to 404.
+- **Sign out everywhere else:** DELETE `/api/auth/sessions` with `{ "all": true }` revokes every other session while preserving the current session. The existing `/api/auth/logout` remains the operation for ending the current session.
+- **Server-side ownership:** session revocation is enforced by `userId + sessionId` in the database; client-supplied user ids are never accepted.
+- **Tests:** route-level tests cover authentication, safe metadata, single-session revocation, current-session protection, revoke-all semantics, and cross-user isolation.
+
+No session token is added to localStorage, query strings, response bodies, or client bundles.
+
 ## Intentionally deferred
 
 - Autonomous agent execution (AgentRun rows exist for audit; no agent logic runs yet).
