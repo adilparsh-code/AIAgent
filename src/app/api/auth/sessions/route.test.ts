@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   getSessionContext: vi.fn(),
@@ -11,6 +11,10 @@ vi.mock("@/lib/server/session", () => mocks);
 vi.mock("@/lib/db", () => ({ isDbUnavailableError: () => false }));
 
 describe("auth sessions route", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("requires authentication", async () => {
     mocks.getSessionContext.mockResolvedValueOnce(null);
     const { GET } = await import("@/app/api/auth/sessions/route");
