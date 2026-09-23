@@ -165,6 +165,11 @@ enum DiscoveryCandidateStatus {
   SKIPPED_DUPLICATE
 }
 
+enum MetricDataClass {
+  REAL_DATA
+  ESTIMATED_DATA
+}
+
 enum HandoffStatus {
   NOT_READY
   READY
@@ -328,11 +333,46 @@ model Experiment {
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
 
+  metricEvents ExperimentMetric[]
+
   @@index([opportunityId])
   @@index([status])
   @@index([handoffId])
   @@index([updatedAt])
   @@index([isSample])
+}
+
+/// Phase 6B — one raw measurement record for an experiment over a reporting
+/// period (a day, a week, or any arbitrary window). Append-only by policy:
+/// corrections are recorded as new rows, never silent rewrites of history.
+/// Only RAW recorded data lives here; derived metrics (CTR, profit, ROI, …)
+/// are always calculated from these rows and never persisted as measurements.
+model ExperimentMetric {
+  id           String          @id @default(cuid())
+  experimentId String
+  experiment   Experiment      @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  recordedAt   DateTime
+  periodStart  DateTime
+  periodEnd    DateTime
+  impressions  Int?
+  clicks       Int?
+  visits       Int?
+  leads        Int?
+  conversions  Int?
+  revenue      Decimal?        @db.Decimal(14, 2)
+  cost         Decimal?        @db.Decimal(14, 2)
+  currency     String          @default("USD")
+  source       String          @default("")
+  dataClass    MetricDataClass @default(REAL_DATA)
+  notes        String          @default("")
+  recordedBy   String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@unique([experimentId, periodStart, periodEnd, source])
+  @@index([experimentId])
+  @@index([experimentId, recordedAt])
+  @@index([periodStart])
 }
 
 /// Machine-readable Opportunity Handoff Contract persisted at the AIAgent →

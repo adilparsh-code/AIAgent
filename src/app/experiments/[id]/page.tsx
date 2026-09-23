@@ -8,6 +8,7 @@ import { formatCurrency } from "@/lib/utils";
 import { experimentRepository, opportunityRepository } from "@/lib/repositories";
 import type { Experiment, Opportunity } from "@/lib/types";
 import { Badge, Card, CardHeader, Button, statusBadgeClass } from "@/components/ui";
+import { ExperimentMetrics } from "@/components/ExperimentMetrics";
 
 export default function ExperimentDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -243,6 +244,8 @@ export default function ExperimentDetailPage({ params }: { params: { id: string 
             </div>
           )}
         </Card>
+
+        <ExperimentMetrics experimentId={experiment.id} />
 
         <Card>
           <CardHeader title="Results" />

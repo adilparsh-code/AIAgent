@@ -316,6 +316,39 @@ handoff → experiment → evaluate → feedback) is unchanged — it is now own
   `Session`, ownership columns and indexes. Existing Phase 1–5 rows keep working (owners are NULL
   until explicitly reassigned); nothing is reset or rewritten.
 
+## Phase 6B — Time-series experiment metrics
+
+`Experiment.metrics` JSON was a single snapshot. Phase 6B adds a persistent, auditable time series
+without removing anything:
+
+- **`ExperimentMetric`** rows (`20260923130000_phase6b_metric_time_series`, purely additive): one row
+  per raw measurement over a reporting period (day/week/arbitrary window) with `recordedAt`,
+  `periodStart`/`periodEnd`, optional raw values (`impressions`, `clicks`, `visits`, `leads`,
+  `conversions`, `revenue`, `cost`), `currency`, `source`, `dataClass` (`REAL_DATA`/`ESTIMATED_DATA`),
+  `notes`, and `recordedBy` (the session user — who/what/when/where audit trail). Unique on
+  `(experimentId, periodStart, periodEnd, source)`: accidental duplicate ingestion is rejected (409),
+  while multiple legitimate sources measuring the same period are all preserved. Indexed on
+  `experimentId`, `(experimentId, recordedAt)`, and `periodStart`; cascade-deletes with the experiment.
+- **Raw vs derived**: only raw measurements are persisted. CTR, conversion rate, profit, ROI, CPC,
+  CPL, CPA, and revenue-per-visit are always calculated from recorded rows and labeled as calculated.
+- **Missing-data semantics**: an unrecorded metric is NULL end to end (DB → repository → API →
+  aggregation → evaluation → UI, rendered as “—”), never coerced to zero; explicit zeros stay zeros.
+  Zero denominators yield null derived values — never NaN or Infinity.
+- **Aggregation**: `summarizeMetricSeries` produces chronological totals, cumulative running totals,
+  per-record data classes (`REAL_DATA`/`ESTIMATED_DATA`/`MIXED`), and the missing-key list. Date-range
+  filtering uses inclusive overlap semantics (`periodEnd ≥ from AND periodStart ≤ to`).
+- **APIs** (all owner-authorized through Experiment → Opportunity, same 404-masking as Phase 6A):
+  `POST/GET /api/experiments/:id/metrics`, `GET /api/experiments/:id/metrics/summary?from&to`.
+- **Evaluation**: `POST/GET /api/experiments/:id/evaluate` now prefers the aggregated time series and
+  falls back to the legacy `metrics` JSON snapshot when no metric records exist, so pre-6B experiments
+  evaluate unchanged. Decision rules are the untouched Phase 5 rules; feedback records flag
+  estimated/mixed series.
+- **Mutation policy**: append-only. Corrections are new records (optionally `ESTIMATED_DATA` with a
+  note); the owner can explicitly delete a record, but nothing is silently rewritten.
+- **UI**: the experiment page gained a time-series table (period, raw values, class, source), a
+  summary card distinguishing recorded vs calculated vs missing, a relative conversions bar built from
+  recorded data only, and an append-metric form.
+
 ## Intentionally deferred
 
 - Autonomous agent execution (AgentRun rows exist for audit; no agent logic runs yet).
@@ -325,4 +358,5 @@ handoff → experiment → evaluate → feedback) is unchanged — it is now own
 - OAuth/SSO and email verification; password reset flow.
 - Distributed rate limiting (the in-memory boundary protects a single instance only) and
   account-recovery flows.
+- Automatic re-ranking from experiment feedback (deferred to Phase 6C by design).
 - Broader provider coverage and richer query strategies.
