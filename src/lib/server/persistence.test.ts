@@ -115,10 +115,11 @@ function makeResearchRun(runId: string, opportunityId: string): ResearchRun {
 }
 
 describe.skipIf(!hasDb)("persistence (real PostgreSQL)", () => {
-  const prisma = getPrisma();
+  const prisma = hasDb ? getPrisma() : (null as never);
   const createdOpportunityIds: string[] = [];
 
   afterAll(async () => {
+    if (!hasDb) return;
     for (const id of createdOpportunityIds) {
       await prisma.opportunity.delete({ where: { id } }).catch(() => undefined);
     }
@@ -282,5 +283,63 @@ describe.skipIf(!hasDb)("persistence (real PostgreSQL)", () => {
     await prisma.revenueEntry.delete({ where: { id: revenue.id } });
     await prisma.experiment.delete({ where: { id: experiment.id } });
     await prisma.product.delete({ where: { id: product.id } });
+  });
+
+  it("discovery run and candidates persist with unique normalized keys", async () => {
+    const { discoveryRepository } = await import("./repositories/discovery");
+    const created = await discoveryRepository.createRunning({
+      topic: `persist discovery ${uniqueSuffix()}`,
+      category: "education",
+    });
+    const first = await discoveryRepository.addCandidate({
+      discoveryRunId: created.id,
+      title: "Teacher worksheet pack",
+      category: "education",
+      problemHypothesis: "Hypothesis only.",
+      targetAudience: "Teachers",
+      normalizedKey: "teacher worksheet pack",
+      status: "GENERATED",
+    });
+    await expect(
+      discoveryRepository.addCandidate({
+        discoveryRunId: created.id,
+        title: "Teacher Worksheet Pack!!!",
+        category: "education",
+        problemHypothesis: "Duplicate.",
+        targetAudience: "Teachers",
+        normalizedKey: "teacher worksheet pack",
+        status: "SKIPPED_DUPLICATE",
+      }),
+    ).rejects.toThrow();
+
+    await discoveryRepository.updateCandidate(first.id, {
+      status: "RESEARCHED",
+      rank: 1,
+      rankingScore: 12.5,
+      confidence: 0.4,
+      validationConclusion: "INSUFFICIENT_EVIDENCE",
+      evidenceCount: 0,
+      evidenceCoverage: 0,
+      handoffStatus: "NOT_READY",
+      brief: { title: "Teacher worksheet pack" } as never,
+    });
+
+    const completed = await discoveryRepository.completeRun(created.id, {
+      status: "COMPLETED",
+      candidateCount: 1,
+      researchedCount: 1,
+      readyForHandoffCount: 0,
+      errors: [],
+    });
+    expect(completed.candidates).toHaveLength(1);
+    expect(completed.candidates[0]?.normalizedKey).toBe("teacher worksheet pack");
+    expect(completed.candidates[0]?.handoffStatus).toBe("NOT_READY");
+
+    const loaded = await discoveryRepository.getById(created.id);
+    expect(loaded?.topic).toBe(created.topic);
+    const found = await discoveryRepository.getCandidate(first.id);
+    expect(found?.candidate.id).toBe(first.id);
+
+    await prisma.discoveryRun.delete({ where: { id: created.id } });
   });
 });

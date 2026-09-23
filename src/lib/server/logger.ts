@@ -43,4 +43,13 @@ export const logger = {
   agentRunFailed(runId: string, agentId: string, errors: string[]) {
     emit("error", "agentRun.failed", { runId, agentId, errors });
   },
+  discoveryStarted(runId: string, topic: string, category: string) {
+    emit("info", "discovery.started", { runId, topic, category });
+  },
+  discoveryCompleted(runId: string, status: string, candidateCount: number, readyForHandoffCount: number) {
+    emit("info", "discovery.completed", { runId, status, candidateCount, readyForHandoffCount });
+  },
+  discoveryFailed(runId: string, errors: string[]) {
+    emit("error", "discovery.failed", { runId, errors });
+  },
 };

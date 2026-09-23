@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapAgent, mapExperiment, mapOpportunity, mapProduct, mapResearchRun, mapRevenue } from "./db-mappers";
+import { mapAgent, mapDiscoveryRun, mapExperiment, mapOpportunity, mapProduct, mapResearchRun, mapRevenue } from "./db-mappers";
 
 describe("db mappers", () => {
   it("maps opportunity decimals and dates to numbers and ISO strings", () => {
@@ -150,5 +150,51 @@ describe("db mappers", () => {
     expect(run.evidence[0]?.qualityScore).toBe(0.7);
     expect(run.findings[0]?.evidenceIds).toEqual(["ev-1"]);
     expect(run.confidence).toBe(0.8);
+  });
+
+  it("maps discovery runs and candidates", () => {
+    const mapped = mapDiscoveryRun({
+      id: "disc-1",
+      topic: "worksheets",
+      category: "education",
+      status: "COMPLETED",
+      startedAt: new Date("2026-01-01T00:00:00.000Z"),
+      completedAt: new Date("2026-01-01T00:02:00.000Z"),
+      candidateCount: 1,
+      researchedCount: 1,
+      readyForHandoffCount: 0,
+      errors: [],
+      notes: "hypotheses",
+      candidates: [{
+        id: "cand-1",
+        discoveryRunId: "disc-1",
+        title: "Teacher worksheet pack",
+        category: "education",
+        problemHypothesis: "Hypothesis",
+        targetAudience: "Teachers",
+        normalizedKey: "teacher worksheet pack",
+        status: "RESEARCHED",
+        opportunityId: null,
+        researchRunId: "research-1",
+        rank: 1,
+        rankingScore: { toNumber: () => 12.5 },
+        confidence: { toNumber: () => 0.4 },
+        validationConclusion: "INSUFFICIENT_EVIDENCE",
+        evidenceCount: 0,
+        evidenceCoverage: 0,
+        sourceDiversity: 0,
+        contradictionCount: 0,
+        brief: null,
+        rankingBreakdown: null,
+        handoffPayload: null,
+        handoffStatus: "NOT_READY",
+        errors: [],
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+        updatedAt: new Date("2026-01-01T00:02:00.000Z"),
+      }],
+    });
+    expect(mapped.candidates[0]?.rankingScore).toBe(12.5);
+    expect(mapped.candidates[0]?.confidence).toBe(0.4);
+    expect(mapped.completedAt).toBe("2026-01-01T00:02:00.000Z");
   });
 });

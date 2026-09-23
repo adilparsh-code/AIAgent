@@ -1,5 +1,14 @@
 import type { ScoreBreakdown } from "./types";
 
+export type ScoreProvenance = "evidence-backed" | "calculated" | "ai-estimate" | "unmeasured";
+
+export const SCORE_PROVENANCE = {
+  evidenceBacked: "evidence-backed",
+  calculated: "calculated",
+  aiEstimate: "ai-estimate",
+  unmeasured: "unmeasured",
+} as const satisfies Record<string, ScoreProvenance>;
+
 // Scoring weights - transparent and configurable
 export const SCORING_WEIGHTS = {
   demand: 0.2,

@@ -21,6 +21,14 @@ Prisma is server-only. Client components never import `@prisma/client` or `DATAB
 ## Research architecture
 
 ```
+Discovery topic/category
+   → POST /api/discovery
+   → Candidates generated (hypotheses only)
+   → Each candidate researched through existing providers
+   → Evidence normalized / validated / scored / ranked
+   → Opportunity Brief
+   → Optional AI Income Lab handoff contract (not executed)
+
 Opportunity
    → "Run Research" (UI)
    → POST /api/research
@@ -50,6 +58,7 @@ Opportunity 1─N Product 1─N RevenueEntry
 Opportunity 1─N Experiment
 Opportunity 1─N RevenueEntry
 Agent 1─N AgentRun (task, status, input/output/metadata JSON — extensible)
+DiscoveryRun 1─N DiscoveryCandidate (optional Opportunity + ResearchRun links)
 ```
 
 Every research save is a single transaction: `Run + Sources + Evidence + Findings + Validation`
@@ -221,7 +230,27 @@ tests running against real PostgreSQL (CI provides a Postgres 16 service); fresh
 verified; lint verified. Client components still never touch Prisma — UI → API → repository →
 Prisma → PostgreSQL.
 
-## Phase 5 — AI Income Lab handoff + experiment engine (this release)
+## Phase 4 — Autonomous opportunity engine
+
+Pipeline: DISCOVER → RESEARCH → NORMALIZE EVIDENCE → VALIDATE → SCORE → RANK → OPPORTUNITY BRIEF → HANDOFF READY.
+
+- Candidates are research hypotheses, never invented market facts.
+- Every candidate is researched through the existing orchestrator (Brave, Reddit, Google Trends / SerpApi, plus any future provider).
+- Missing provider data is never treated as positive evidence.
+- Ranking separates evidence-backed signals, calculated scores, and AI estimates.
+- AI Income Lab handoff is a machine-readable contract only — implementation is not executed here.
+
+APIs:
+
+- `POST /api/discovery` — start a discovery run (`topic`, `category`, optional `maxCandidates` ≤ 5)
+- `GET /api/discovery` — list recent runs
+- `GET /api/discovery/[id]` — run status and ranked candidates
+- `GET /api/discovery/candidates/[id]` — validated opportunity brief
+- `POST /api/discovery/candidates/[id]/handoff` — prepare the Income Lab handoff contract
+
+UI: Discovery → Research → Validation → Score → Ranked Opportunities → Handoff Ready (`/discovery`).
+
+## Phase 5 — AI Income Lab handoff + experiment engine
 
 Pipeline: **Validated opportunity → handoff contract → accept/reject → experiment → metrics →
 evaluate → WIN/ITERATE/STOP/INSUFFICIENT_DATA → feedback to AIAgent**.
@@ -261,6 +290,7 @@ evaluate → WIN/ITERATE/STOP/INSUFFICIENT_DATA → feedback to AIAgent**.
 ## Intentionally deferred
 
 - Autonomous agent execution (AgentRun rows exist for audit; no agent logic runs yet).
+- Executing AI Income Lab implementation / revenue actions after handoff.
 - Cross-run evidence correlation and historical trend storage.
 - Automatic application of suggested scores (still a human-confirmed suggestion).
 - Authentication/multi-tenancy for the dashboard.

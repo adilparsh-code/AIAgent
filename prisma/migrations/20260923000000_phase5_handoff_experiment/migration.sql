@@ -14,7 +14,9 @@ ALTER TYPE "ExperimentDecision" ADD VALUE 'STOP';
 ALTER TYPE "ExperimentDecision" ADD VALUE 'INSUFFICIENT_DATA';
 
 -- CreateEnum
-CREATE TYPE "HandoffStatus" AS ENUM ('DRAFT', 'HANDOFF_READY', 'ACCEPTED', 'REJECTED', 'COMPLETED');
+-- Named HandoffRecordStatus to avoid colliding with Phase 4's candidate-level
+-- "HandoffStatus" enum (NOT_READY/READY/PREPARED).
+CREATE TYPE "HandoffRecordStatus" AS ENUM ('DRAFT', 'HANDOFF_READY', 'ACCEPTED', 'REJECTED', 'COMPLETED');
 
 -- CreateEnum
 CREATE TYPE "HandoffRecommendedExperimentType" AS ENUM ('MVP_BUILD', 'ASSET_LAUNCH');
@@ -34,7 +36,7 @@ CREATE TABLE "Handoff" (
     "opportunityId" TEXT NOT NULL,
     "contractVersion" INTEGER NOT NULL DEFAULT 1,
     "contract" JSONB NOT NULL,
-    "status" "HandoffStatus" NOT NULL DEFAULT 'DRAFT',
+    "status" "HandoffRecordStatus" NOT NULL DEFAULT 'DRAFT',
     "validationConclusion" TEXT,
     "confidence" DECIMAL(6,4),
     "score" DECIMAL(6,1),

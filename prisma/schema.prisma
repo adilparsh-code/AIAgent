@@ -89,7 +89,9 @@ enum ExperimentDecision {
   INSUFFICIENT_DATA
 }
 
-enum HandoffStatus {
+/// Status of a persisted Handoff row (Phase 5 lifecycle). Named distinctly
+/// from Phase 4's candidate-level "HandoffStatus" enum in Postgres.
+enum HandoffRecordStatus {
   DRAFT
   HANDOFF_READY
   ACCEPTED
@@ -149,42 +151,63 @@ enum AgentRunStatus {
   CANCELLED
 }
 
-model Opportunity {
-  id                         String             @id @default(cuid())
-  title                      String
-  category                   Category
-  businessModel              BusinessModel
-  targetAudience             String             @default("")
-  problemSolved              String             @default("")
-  monetizationMethod         String             @default("")
-  estimatedStartupCost       Decimal            @db.Decimal(12, 2)
-  demandScore                Int
-  competitionScore           Int
-  commercialIntentScore      Int
-  automationScore            Int
-  differentiationScore       Int
-  monetizationStrengthScore  Int
-  halalScore                 Int
-  halalStatus                HalalStatus
-  overallScore               Decimal            @db.Decimal(6, 1)
-  confidence                 Int
-  status                     OpportunityStatus
-  evidence                   String[]           @default([])
-  risks                      String[]           @default([])
-  nextAction                 String             @default("")
-  isSample                   Boolean            @default(false)
-  createdAt                  DateTime           @default(now())
-  updatedAt                  DateTime           @updatedAt
+enum DiscoveryRunStatus {
+  RUNNING
+  COMPLETED
+  PARTIAL
+  FAILED
+}
 
-  products                   Product[]
-  experiments                Experiment[]
-  revenueEntries             RevenueEntry[]
-  researchRuns               ResearchRun[]
-  handoffs                   Handoff[]
-  lastResearchRunId          String?
-  lastResearchAt             DateTime?
-  lastResearchConclusion     String?
-  researchRunCount           Int              @default(0)
+enum DiscoveryCandidateStatus {
+  GENERATED
+  RESEARCHING
+  RESEARCHED
+  SKIPPED_DUPLICATE
+}
+
+enum HandoffStatus {
+  NOT_READY
+  READY
+  PREPARED
+}
+
+model Opportunity {
+  id                        String            @id @default(cuid())
+  title                     String
+  category                  Category
+  businessModel             BusinessModel
+  targetAudience            String            @default("")
+  problemSolved             String            @default("")
+  monetizationMethod        String            @default("")
+  estimatedStartupCost      Decimal           @db.Decimal(12, 2)
+  demandScore               Int
+  competitionScore          Int
+  commercialIntentScore     Int
+  automationScore           Int
+  differentiationScore      Int
+  monetizationStrengthScore Int
+  halalScore                Int
+  halalStatus               HalalStatus
+  overallScore              Decimal           @db.Decimal(6, 1)
+  confidence                Int
+  status                    OpportunityStatus
+  evidence                  String[]          @default([])
+  risks                     String[]          @default([])
+  nextAction                String            @default("")
+  isSample                  Boolean           @default(false)
+  createdAt                 DateTime          @default(now())
+  updatedAt                 DateTime          @updatedAt
+
+  products               Product[]
+  experiments            Experiment[]
+  revenueEntries         RevenueEntry[]
+  researchRuns           ResearchRun[]
+  handoffs               Handoff[]
+  discoveryCandidates    DiscoveryCandidate[]
+  lastResearchRunId      String?
+  lastResearchAt         DateTime?
+  lastResearchConclusion String?
+  researchRunCount       Int                  @default(0)
 
   @@index([status])
   @@index([category])
@@ -195,25 +218,25 @@ model Opportunity {
 }
 
 model Product {
-  id              String        @id @default(cuid())
-  name            String
-  type            ProductType
-  targetAudience  String        @default("")
-  opportunityId   String?
-  opportunity     Opportunity?  @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
-  status          ProductStatus
-  price           Decimal       @db.Decimal(12, 2)
-  cost            Decimal       @db.Decimal(12, 2)
-  revenue         Decimal       @db.Decimal(12, 2)
-  platform        String        @default("")
-  productUrl      String?
-  affiliateUrl    String?
-  metrics         Json?
-  notes           String        @default("")
-  isSample        Boolean       @default(false)
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
-  revenueEntries  RevenueEntry[]
+  id             String         @id @default(cuid())
+  name           String
+  type           ProductType
+  targetAudience String         @default("")
+  opportunityId  String?
+  opportunity    Opportunity?   @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  status         ProductStatus
+  price          Decimal        @db.Decimal(12, 2)
+  cost           Decimal        @db.Decimal(12, 2)
+  revenue        Decimal        @db.Decimal(12, 2)
+  platform       String         @default("")
+  productUrl     String?
+  affiliateUrl   String?
+  metrics        Json?
+  notes          String         @default("")
+  isSample       Boolean        @default(false)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  revenueEntries RevenueEntry[]
 
   @@index([opportunityId])
   @@index([status])
@@ -221,36 +244,36 @@ model Product {
 }
 
 model Experiment {
-  id              String               @id @default(cuid())
+  id              String              @id @default(cuid())
   hypothesis      String
   opportunityId   String
-  opportunity     Opportunity          @relation(fields: [opportunityId], references: [id], onDelete: Restrict)
+  opportunity     Opportunity         @relation(fields: [opportunityId], references: [id], onDelete: Restrict)
   target          String
-  budget          Decimal              @db.Decimal(12, 2)
+  budget          Decimal             @db.Decimal(12, 2)
   startDate       DateTime
   endDate         DateTime?
-  expectedResult  String               @default("")
+  expectedResult  String              @default("")
   actualResult    String?
-  objective       String               @default("")
-  successCriteria String[]             @default([])
+  objective       String              @default("")
+  successCriteria String[]            @default([])
   metrics         Json?
   result          String?
-  notes           String               @default("")
+  notes           String              @default("")
   feedback        Json?
-  visitors        Int                  @default(0)
-  leads           Int                  @default(0)
-  clicks          Int                  @default(0)
-  sales           Int                  @default(0)
-  revenue         Decimal              @db.Decimal(12, 2)
-  profit          Decimal              @db.Decimal(12, 2)
-  conversionRate  Decimal              @db.Decimal(8, 4)
+  visitors        Int                 @default(0)
+  leads           Int                 @default(0)
+  clicks          Int                 @default(0)
+  sales           Int                 @default(0)
+  revenue         Decimal             @db.Decimal(12, 2)
+  profit          Decimal             @db.Decimal(12, 2)
+  conversionRate  Decimal             @db.Decimal(8, 4)
   decision        ExperimentDecision?
   status          ExperimentStatus
   handoffId       String?
-  handoff         Handoff?             @relation(fields: [handoffId], references: [id], onDelete: SetNull)
-  isSample        Boolean              @default(false)
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  handoff         Handoff?            @relation(fields: [handoffId], references: [id], onDelete: SetNull)
+  isSample        Boolean             @default(false)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
 
   @@index([opportunityId])
   @@index([status])
@@ -262,27 +285,27 @@ model Experiment {
 /// Machine-readable Opportunity Handoff Contract persisted at the AIAgent →
 /// AI Income Lab boundary. The contract JSON is validated before HANDOFF_READY.
 model Handoff {
-  id                    String                          @id @default(cuid())
+  id                    String                           @id @default(cuid())
   opportunityId         String
-  opportunity           Opportunity                     @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  contractVersion       Int                             @default(1)
+  opportunity           Opportunity                      @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  contractVersion       Int                              @default(1)
   contract              Json
-  status                HandoffStatus                   @default(DRAFT)
+  status                HandoffRecordStatus              @default(DRAFT)
   validationConclusion  String?
-  confidence            Decimal?                        @db.Decimal(6, 4)
-  score                 Decimal?                        @db.Decimal(6, 1)
+  confidence            Decimal?                         @db.Decimal(6, 4)
+  score                 Decimal?                         @db.Decimal(6, 1)
   recommendedExperiment HandoffRecommendedExperimentType @default(MVP_BUILD)
   experimentHypothesis  String
-  successCriteria       String[]                        @default([])
-  budgetLimit           Decimal?                        @db.Decimal(12, 2)
+  successCriteria       String[]                         @default([])
+  budgetLimit           Decimal?                         @db.Decimal(12, 2)
   timeLimitDays         Int?
   acceptedAt            DateTime?
   rejectedAt            DateTime?
   rejectionReason       String?
-  createdAt             DateTime                        @default(now())
-  updatedAt             DateTime                        @updatedAt
+  createdAt             DateTime                         @default(now())
+  updatedAt             DateTime                         @updatedAt
 
-  experiments           Experiment[]
+  experiments Experiment[]
 
   @@index([opportunityId])
   @@index([status])
@@ -290,23 +313,23 @@ model Handoff {
 }
 
 model RevenueEntry {
-  id               String         @id @default(cuid())
-  date             DateTime
-  productId        String?
-  product          Product?       @relation(fields: [productId], references: [id], onDelete: SetNull)
-  opportunityId    String?
-  opportunity      Opportunity?   @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
-  revenueSource    RevenueSource
-  grossRevenue     Decimal        @db.Decimal(12, 2)
-  fees             Decimal        @db.Decimal(12, 2)
-  advertisingCost  Decimal        @db.Decimal(12, 2)
-  otherCosts       Decimal        @db.Decimal(12, 2)
-  netRevenue       Decimal        @db.Decimal(12, 2)
-  currency         String         @default("USD")
-  referenceNote    String         @default("")
-  isSample         Boolean        @default(false)
-  createdAt        DateTime       @default(now())
-  updatedAt        DateTime       @updatedAt
+  id              String        @id @default(cuid())
+  date            DateTime
+  productId       String?
+  product         Product?      @relation(fields: [productId], references: [id], onDelete: SetNull)
+  opportunityId   String?
+  opportunity     Opportunity?  @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  revenueSource   RevenueSource
+  grossRevenue    Decimal       @db.Decimal(12, 2)
+  fees            Decimal       @db.Decimal(12, 2)
+  advertisingCost Decimal       @db.Decimal(12, 2)
+  otherCosts      Decimal       @db.Decimal(12, 2)
+  netRevenue      Decimal       @db.Decimal(12, 2)
+  currency        String        @default("USD")
+  referenceNote   String        @default("")
+  isSample        Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([date])
   @@index([opportunityId])
@@ -316,17 +339,17 @@ model RevenueEntry {
 }
 
 model Agent {
-  id           String      @id @default(cuid())
-  name         String
-  type         AgentType
-  description  String      @default("")
-  status       AgentStatus @default(DISABLED)
-  lastRun      DateTime?
-  placeholder  Boolean     @default(true)
-  isSample     Boolean     @default(false)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-  agentRuns    AgentRun[]
+  id          String      @id @default(cuid())
+  name        String
+  type        AgentType
+  description String      @default("")
+  status      AgentStatus @default(DISABLED)
+  lastRun     DateTime?
+  placeholder Boolean     @default(true)
+  isSample    Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  agentRuns   AgentRun[]
 
   @@unique([name, type])
   @@index([type])
@@ -337,18 +360,18 @@ model Agent {
 /// Execution record for an agent task. Designed so future autonomous agents can
 /// be added without schema changes: task, input/output and metadata are open JSON.
 model AgentRun {
-  id          String        @id @default(cuid())
+  id          String         @id @default(cuid())
   agentId     String
-  agent       Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  agent       Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
   task        String
   status      AgentRunStatus @default(RUNNING)
-  startedAt   DateTime      @default(now())
+  startedAt   DateTime       @default(now())
   completedAt DateTime?
   input       Json?
   output      Json?
-  errors      String[]      @default([])
+  errors      String[]       @default([])
   metadata    Json?
-  createdAt   DateTime      @default(now())
+  createdAt   DateTime       @default(now())
 
   @@index([agentId])
   @@index([status])
@@ -356,26 +379,26 @@ model AgentRun {
 }
 
 model ResearchRun {
-  id                   String            @id
-  opportunityId        String
-  opportunity          Opportunity       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
-  status               ResearchRunStatus
-  startedAt            DateTime
-  completedAt          DateTime?
-  confidence           Decimal           @db.Decimal(6, 4)
-  conclusion           String?
-  conclusionBasis      String?
-  providersAttempted   String[]          @default([])
-  providersSucceeded   String[]          @default([])
-  providerStatuses     Json?
-  validationSignals    Json?
-  scoreIntegration     Json?
-  errors               String[]          @default([])
-  queries              ResearchQuery[]
-  sources              ResearchSource[]
-  evidence             Evidence[]
-  findings             ResearchFinding[]
-  validation           Validation?
+  id                 String            @id
+  opportunityId      String
+  opportunity        Opportunity       @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  status             ResearchRunStatus
+  startedAt          DateTime
+  completedAt        DateTime?
+  confidence         Decimal           @db.Decimal(6, 4)
+  conclusion         String?
+  conclusionBasis    String?
+  providersAttempted String[]          @default([])
+  providersSucceeded String[]          @default([])
+  providerStatuses   Json?
+  validationSignals  Json?
+  scoreIntegration   Json?
+  errors             String[]          @default([])
+  queries            ResearchQuery[]
+  sources            ResearchSource[]
+  evidence           Evidence[]
+  findings           ResearchFinding[]
+  validation         Validation?
 
   @@index([opportunityId])
   @@index([startedAt])
@@ -383,13 +406,13 @@ model ResearchRun {
 }
 
 model ResearchQuery {
-  id             String      @id @default(cuid())
-  researchRunId  String
-  researchRun    ResearchRun @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
-  query          String
-  source         String
-  purpose        String
-  createdAt      DateTime    @default(now())
+  id            String      @id @default(cuid())
+  researchRunId String
+  researchRun   ResearchRun @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
+  query         String
+  source        String
+  purpose       String
+  createdAt     DateTime    @default(now())
 
   @@index([researchRunId])
   @@index([source])
@@ -424,15 +447,15 @@ model Evidence {
 /// One row per provider per research run: which provider produced which evidence,
 /// with what queries, and whether it succeeded, failed, or was unconfigured.
 model ResearchSource {
-  id            String    @id @default(cuid())
+  id            String      @id @default(cuid())
   researchRunId String
   researchRun   ResearchRun @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
   provider      String
   status        String
   error         String?
-  evidenceCount Int       @default(0)
-  queries       String[]  @default([])
-  createdAt     DateTime  @default(now())
+  evidenceCount Int         @default(0)
+  queries       String[]    @default([])
+  createdAt     DateTime    @default(now())
   evidence      Evidence[]
 
   @@unique([researchRunId, provider])
@@ -468,15 +491,75 @@ model Validation {
 }
 
 model ResearchFinding {
-  id              String      @id
-  researchRunId   String
-  researchRun     ResearchRun @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
-  claim           String
-  summary         String      @default("")
-  confidence      Decimal     @db.Decimal(6, 4)
-  evidenceIds     String[]    @default([])
-  contradictions  String[]    @default([])
-  evidence        Evidence[]  @relation("FindingEvidence")
+  id             String      @id
+  researchRunId  String
+  researchRun    ResearchRun @relation(fields: [researchRunId], references: [id], onDelete: Cascade)
+  claim          String
+  summary        String      @default("")
+  confidence     Decimal     @db.Decimal(6, 4)
+  evidenceIds    String[]    @default([])
+  contradictions String[]    @default([])
+  evidence       Evidence[]  @relation("FindingEvidence")
 
+  @@index([researchRunId])
+}
+
+/// One autonomous discovery job: topic/category in, ranked opportunity briefs out.
+model DiscoveryRun {
+  id                   String               @id @default(cuid())
+  topic                String
+  category             String
+  status               DiscoveryRunStatus
+  startedAt            DateTime             @default(now())
+  completedAt          DateTime?
+  candidateCount       Int                  @default(0)
+  researchedCount      Int                  @default(0)
+  readyForHandoffCount Int                  @default(0)
+  errors               String[]             @default([])
+  notes                String               @default("")
+  candidates           DiscoveryCandidate[]
+
+  @@index([status])
+  @@index([startedAt])
+  @@index([category])
+}
+
+/// A discovery candidate researched through the existing orchestrator.
+/// Evidence, validation, and scores live on the linked ResearchRun — this row
+/// only stores discovery metadata, ranking, the brief, and the handoff contract.
+model DiscoveryCandidate {
+  id                   String                   @id @default(cuid())
+  discoveryRunId       String
+  discoveryRun         DiscoveryRun             @relation(fields: [discoveryRunId], references: [id], onDelete: Cascade)
+  title                String
+  category             String
+  problemHypothesis    String                   @default("")
+  targetAudience       String                   @default("")
+  normalizedKey        String
+  status               DiscoveryCandidateStatus @default(GENERATED)
+  opportunityId        String?
+  opportunity          Opportunity?             @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
+  researchRunId        String?
+  rank                 Int?
+  rankingScore         Decimal?                 @db.Decimal(6, 1)
+  confidence           Decimal?                 @db.Decimal(6, 4)
+  validationConclusion String?
+  evidenceCount        Int                      @default(0)
+  evidenceCoverage     Int                      @default(0)
+  sourceDiversity      Int                      @default(0)
+  contradictionCount   Int                      @default(0)
+  brief                Json?
+  rankingBreakdown     Json?
+  handoffPayload       Json?
+  handoffStatus        HandoffStatus            @default(NOT_READY)
+  errors               String[]                 @default([])
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  @@unique([discoveryRunId, normalizedKey])
+  @@index([discoveryRunId])
+  @@index([status])
+  @@index([handoffStatus])
+  @@index([opportunityId])
   @@index([researchRunId])
 }
