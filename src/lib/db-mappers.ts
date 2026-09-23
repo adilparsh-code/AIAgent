@@ -1,6 +1,8 @@
 import type {
   Agent,
+  AgentArtifactRecord,
   AgentRunRecord,
+  AgentTaskRecord,
   Experiment,
   HandoffRecord,
   Opportunity,
@@ -478,6 +480,108 @@ export function mapAgentRun(row: {
     output: row.output ?? null,
     errors: row.errors,
     metadata: row.metadata ?? null,
+    createdAt: iso(row.createdAt)!,
+  };
+}
+
+/** Map a persisted AgentTask row to the app-level AgentTaskRecord contract. */
+export function mapAgentTask(row: {
+  id: string;
+  contractVersion: number;
+  agentId: string;
+  ownerId: string;
+  opportunityId: string | null;
+  experimentId: string | null;
+  taskType: AgentTaskRecord["taskType"];
+  objective: string;
+  instructions: string;
+  inputs: unknown;
+  expectedOutputs: string[];
+  constraints: string[];
+  budgetLimit: { toNumber?: () => number } | number | string;
+  timeLimitSeconds: number;
+  maxOutputChars: number;
+  maxRetries: number;
+  maxActions: number;
+  requiresApproval: boolean;
+  approvalState: string | null;
+  approvedBy: string | null;
+  approvedAt: Date | string | null;
+  rejectionReason: string | null;
+  status: AgentTaskRecord["status"];
+  attempt: number;
+  actionCount: number;
+  lastAttemptAt: Date | string | null;
+  startedAt: Date | string | null;
+  completedAt: Date | string | null;
+  durationMs: number | null;
+  result: unknown;
+  errors: string[];
+  blockedReason: string | null;
+  cancellation: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}): AgentTaskRecord {
+  return {
+    id: row.id,
+    contractVersion: row.contractVersion,
+    agentId: row.agentId,
+    ownerId: row.ownerId,
+    opportunityId: row.opportunityId,
+    experimentId: row.experimentId,
+    taskType: row.taskType,
+    objective: row.objective,
+    instructions: row.instructions,
+    inputs: row.inputs ?? null,
+    expectedOutputs: row.expectedOutputs,
+    constraints: row.constraints,
+    limits: {
+      timeLimitSeconds: row.timeLimitSeconds,
+      maxOutputChars: row.maxOutputChars,
+      maxRetries: row.maxRetries,
+      maxActions: row.maxActions,
+      budgetLimit: decimalToNumber(row.budgetLimit),
+    },
+    requiresApproval: row.requiresApproval,
+    blockedReason: row.blockedReason,
+    approvalState: (row.approvalState as AgentTaskRecord["approvalState"]) ?? null,
+    approvedBy: row.approvedBy,
+    approvedAt: iso(row.approvedAt),
+    rejectionReason: row.rejectionReason,
+    status: row.status,
+    attempt: row.attempt,
+    actionCount: row.actionCount,
+    lastAttemptAt: iso(row.lastAttemptAt),
+    startedAt: iso(row.startedAt),
+    completedAt: iso(row.completedAt),
+    durationMs: row.durationMs,
+    result: row.result ?? null,
+    errors: row.errors,
+    cancellation: row.cancellation,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
+  };
+}
+
+/** Map a persisted AgentArtifact row to the app-level artifact record. */
+export function mapAgentArtifact(row: {
+  id: string;
+  taskId: string;
+  type: string;
+  title: string;
+  content: string;
+  data: unknown;
+  dataClass: AgentArtifactRecord["dataClass"];
+  createdAt: Date | string;
+}): AgentArtifactRecord {
+  return {
+    id: row.id,
+    taskId: row.taskId,
+    type: row.type as AgentArtifactRecord["type"],
+    title: row.title,
+    content: row.content,
+    data: row.data ?? null,
+    dataClass: row.dataClass,
     createdAt: iso(row.createdAt)!,
   };
 }

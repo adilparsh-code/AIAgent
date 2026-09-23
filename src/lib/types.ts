@@ -277,6 +277,20 @@ import type {
   OpportunityHandoffContract,
   HandoffRecommendedExperimentType,
 } from "./handoff";
+// AgentTask (Phase 7): versioned machine-readable task contract for the
+// controlled agent runtime. Types live in agent-task.ts.
+export type {
+  AgentArtifactDataClass,
+  AgentArtifactRecord,
+  AgentArtifactType,
+  AgentTaskCreateInput,
+  AgentTaskExecutionResult,
+  AgentTaskLimits,
+  AgentTaskStatus,
+  AgentTaskType,
+  AgentTaskRecord,
+} from "./agent-task";
+import type { AgentTaskRecord } from "./agent-task";
 export type {
   HandoffStatus,
   HandoffEligibility,
