@@ -1,4 +1,14 @@
-import type { Agent, AgentRunRecord, Experiment, Opportunity, Product, ProductMetrics, RevenueEntry } from "./types";
+import type {
+  Agent,
+  AgentRunRecord,
+  Experiment,
+  HandoffRecord,
+  Opportunity,
+  OpportunityHandoffContract,
+  Product,
+  ProductMetrics,
+  RevenueEntry,
+} from "./types";
 import type {
   Evidence,
   EvidenceDataClass,
@@ -15,6 +25,10 @@ import type {
 
 function jsonValue<T>(value: unknown, fallback: T): T {
   return (value ?? fallback) as T;
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? (value as string[]) : [];
 }
 
 function decimalToNumber(value: { toNumber?: () => number } | number | string): number {
@@ -131,6 +145,12 @@ export function mapExperiment(row: {
   endDate: Date | string | null;
   expectedResult: string;
   actualResult: string | null;
+  objective?: string | null;
+  successCriteria?: unknown;
+  metrics?: unknown;
+  result?: string | null;
+  notes?: string | null;
+  feedback?: unknown;
   visitors: number;
   leads: number;
   clicks: number;
@@ -140,6 +160,7 @@ export function mapExperiment(row: {
   conversionRate: { toNumber?: () => number } | number | string;
   decision: Experiment["decision"];
   status: Experiment["status"];
+  handoffId?: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
 }): Experiment {
@@ -153,6 +174,12 @@ export function mapExperiment(row: {
     endDate: iso(row.endDate),
     expectedResult: row.expectedResult,
     actualResult: row.actualResult,
+    objective: row.objective ?? null,
+    successCriteria: stringArray(row.successCriteria),
+    metrics: (row.metrics as Experiment["metrics"]) ?? null,
+    result: row.result ?? null,
+    notes: row.notes ?? "",
+    feedback: (row.feedback as Experiment["feedback"]) ?? null,
     visitors: row.visitors,
     leads: row.leads,
     clicks: row.clicks,
@@ -162,6 +189,7 @@ export function mapExperiment(row: {
     conversionRate: decimalToNumber(row.conversionRate),
     decision: row.decision,
     status: row.status,
+    handoffId: row.handoffId ?? null,
     createdAt: iso(row.createdAt)!,
     updatedAt: iso(row.updatedAt)!,
   };
@@ -348,6 +376,69 @@ export function mapValidation(row: {
     conclusion: row.conclusion as ResearchConclusion,
     conclusionBasis: row.conclusionBasis,
     createdAt: iso(row.createdAt)!,
+  };
+}
+
+/** Map a persisted Handoff row to the typed contract shape. */
+export function mapHandoff(row: {
+  id: string;
+  opportunityId: string;
+  contractVersion: number;
+  contract: unknown;
+  status: string;
+  validationConclusion: string | null;
+  confidence: { toNumber?: () => number } | number | string | null;
+  score: { toNumber?: () => number } | number | string | null;
+  recommendedExperiment: string;
+  experimentHypothesis: string;
+  successCriteria: unknown;
+  budgetLimit: { toNumber?: () => number } | number | string | null;
+  timeLimitDays: number | null;
+  acceptedAt: Date | string | null;
+  rejectedAt: Date | string | null;
+  rejectionReason: string | null;
+  createdAt: Date | string;
+  updatedAt: Date | string;
+}): HandoffRecord {
+  return {
+    id: row.id,
+    opportunityId: row.opportunityId,
+    contractVersion: row.contractVersion,
+    contract: jsonValue<OpportunityHandoffContract>(row.contract, {
+      contractVersion: 1,
+      handoffId: row.id,
+      opportunityId: row.opportunityId,
+      title: "",
+      category: "",
+      targetAudience: "",
+      problem: "",
+      validationConclusion: null,
+      confidence: null,
+      score: null,
+      evidence: [],
+      monetizationOptions: [],
+      risks: [],
+      recommendedExperiment: "MVP_BUILD",
+      experimentHypothesis: row.experimentHypothesis,
+      successCriteria: stringArray(row.successCriteria),
+      budgetLimit: row.budgetLimit === null ? null : decimalToNumber(row.budgetLimit),
+      timeLimitDays: row.timeLimitDays,
+      handoffStatus: row.status as OpportunityHandoffContract["handoffStatus"],
+    }),
+    status: row.status as HandoffRecord["status"],
+    validationConclusion: (row.validationConclusion ?? null) as HandoffRecord["validationConclusion"],
+    confidence: row.confidence === null ? null : decimalToNumber(row.confidence),
+    score: row.score === null ? null : decimalToNumber(row.score),
+    recommendedExperiment: row.recommendedExperiment as HandoffRecord["recommendedExperiment"],
+    experimentHypothesis: row.experimentHypothesis,
+    successCriteria: stringArray(row.successCriteria),
+    budgetLimit: row.budgetLimit === null ? null : decimalToNumber(row.budgetLimit),
+    timeLimitDays: row.timeLimitDays,
+    acceptedAt: iso(row.acceptedAt),
+    rejectedAt: iso(row.rejectedAt),
+    rejectionReason: row.rejectionReason,
+    createdAt: iso(row.createdAt)!,
+    updatedAt: iso(row.updatedAt)!,
   };
 }
 

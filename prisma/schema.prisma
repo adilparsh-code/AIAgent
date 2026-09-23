@@ -69,8 +69,12 @@ enum ProductStatus {
 
 enum ExperimentStatus {
   PLANNED
+  READY
+  RUNNING
   ACTIVE
   COMPLETED
+  STOPPED
+  ITERATING
   FAILED
   PAUSED
 }
@@ -80,6 +84,22 @@ enum ExperimentDecision {
   ITERATE
   PAUSE
   KILL
+  WIN
+  STOP
+  INSUFFICIENT_DATA
+}
+
+enum HandoffStatus {
+  DRAFT
+  HANDOFF_READY
+  ACCEPTED
+  REJECTED
+  COMPLETED
+}
+
+enum HandoffRecommendedExperimentType {
+  MVP_BUILD
+  ASSET_LAUNCH
 }
 
 enum RevenueSource {
@@ -160,6 +180,7 @@ model Opportunity {
   experiments                Experiment[]
   revenueEntries             RevenueEntry[]
   researchRuns               ResearchRun[]
+  handoffs                   Handoff[]
   lastResearchRunId          String?
   lastResearchAt             DateTime?
   lastResearchConclusion     String?
@@ -210,6 +231,12 @@ model Experiment {
   endDate         DateTime?
   expectedResult  String               @default("")
   actualResult    String?
+  objective       String               @default("")
+  successCriteria String[]             @default([])
+  metrics         Json?
+  result          String?
+  notes           String               @default("")
+  feedback        Json?
   visitors        Int                  @default(0)
   leads           Int                  @default(0)
   clicks          Int                  @default(0)
@@ -219,14 +246,47 @@ model Experiment {
   conversionRate  Decimal              @db.Decimal(8, 4)
   decision        ExperimentDecision?
   status          ExperimentStatus
+  handoffId       String?
+  handoff         Handoff?             @relation(fields: [handoffId], references: [id], onDelete: SetNull)
   isSample        Boolean              @default(false)
   createdAt       DateTime             @default(now())
   updatedAt       DateTime             @updatedAt
 
   @@index([opportunityId])
   @@index([status])
+  @@index([handoffId])
   @@index([updatedAt])
   @@index([isSample])
+}
+
+/// Machine-readable Opportunity Handoff Contract persisted at the AIAgent →
+/// AI Income Lab boundary. The contract JSON is validated before HANDOFF_READY.
+model Handoff {
+  id                    String                          @id @default(cuid())
+  opportunityId         String
+  opportunity           Opportunity                     @relation(fields: [opportunityId], references: [id], onDelete: Cascade)
+  contractVersion       Int                             @default(1)
+  contract              Json
+  status                HandoffStatus                   @default(DRAFT)
+  validationConclusion  String?
+  confidence            Decimal?                        @db.Decimal(6, 4)
+  score                 Decimal?                        @db.Decimal(6, 1)
+  recommendedExperiment HandoffRecommendedExperimentType @default(MVP_BUILD)
+  experimentHypothesis  String
+  successCriteria       String[]                        @default([])
+  budgetLimit           Decimal?                        @db.Decimal(12, 2)
+  timeLimitDays         Int?
+  acceptedAt            DateTime?
+  rejectedAt            DateTime?
+  rejectionReason       String?
+  createdAt             DateTime                        @default(now())
+  updatedAt             DateTime                        @updatedAt
+
+  experiments           Experiment[]
+
+  @@index([opportunityId])
+  @@index([status])
+  @@index([createdAt])
 }
 
 model RevenueEntry {

@@ -14,13 +14,15 @@ import {
   Settings,
   Menu,
   X,
+  ArrowRightLeft,
 } from "lucide-react";
 
 const NAV = [
   { title: "Dashboard", href: "/", icon: LayoutDashboard },
   { title: "Opportunities", href: "/opportunities", icon: Lightbulb },
-  { title: "Products", href: "/products", icon: Package },
+  { title: "Handoffs", href: "/handoffs", icon: ArrowRightLeft },
   { title: "Experiments", href: "/experiments", icon: FlaskConical },
+  { title: "Products", href: "/products", icon: Package },
   { title: "Revenue", href: "/revenue", icon: DollarSign },
   { title: "AI Agents", href: "/agents", icon: Bot },
   { title: "Settings", href: "/settings", icon: Settings },

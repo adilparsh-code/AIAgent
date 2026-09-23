@@ -4,6 +4,36 @@ import type { Repository } from "../../repositories/base";
 import { getPrisma } from "../../db";
 import { mapExperiment } from "../../db-mappers";
 
+const SELECT = {
+  id: true,
+  hypothesis: true,
+  opportunityId: true,
+  target: true,
+  budget: true,
+  startDate: true,
+  endDate: true,
+  expectedResult: true,
+  actualResult: true,
+  objective: true,
+  successCriteria: true,
+  metrics: true,
+  result: true,
+  notes: true,
+  feedback: true,
+  visitors: true,
+  leads: true,
+  clicks: true,
+  sales: true,
+  revenue: true,
+  profit: true,
+  conversionRate: true,
+  decision: true,
+  status: true,
+  handoffId: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
 export class PrismaExperimentRepository implements Repository<Experiment> {
   async getAll(): Promise<Experiment[]> {
     const rows = await getPrisma().experiment.findMany({
@@ -47,6 +77,12 @@ export class PrismaExperimentRepository implements Repository<Experiment> {
         endDate: item.endDate ? new Date(item.endDate) : null,
         expectedResult: item.expectedResult,
         actualResult: item.actualResult,
+        objective: item.objective ?? "",
+        successCriteria: item.successCriteria ?? [],
+        metrics: (item.metrics ?? undefined) as never,
+        result: item.result ?? null,
+        notes: item.notes ?? "",
+        feedback: (item.feedback ?? undefined) as never,
         visitors: item.visitors,
         leads: item.leads,
         clicks: item.clicks,
@@ -56,6 +92,7 @@ export class PrismaExperimentRepository implements Repository<Experiment> {
         conversionRate: item.conversionRate,
         decision: item.decision,
         status: item.status,
+        handoffId: item.handoffId ?? null,
         isSample: false,
       },
     });
@@ -80,6 +117,12 @@ export class PrismaExperimentRepository implements Repository<Experiment> {
         endDate: merged.endDate ? new Date(merged.endDate) : null,
         expectedResult: merged.expectedResult,
         actualResult: merged.actualResult,
+        objective: merged.objective ?? "",
+        successCriteria: merged.successCriteria ?? [],
+        metrics: (merged.metrics ?? undefined) as never,
+        result: merged.result ?? null,
+        notes: merged.notes ?? "",
+        feedback: (merged.feedback ?? undefined) as never,
         visitors: merged.visitors,
         leads: merged.leads,
         clicks: merged.clicks,
@@ -89,6 +132,7 @@ export class PrismaExperimentRepository implements Repository<Experiment> {
         conversionRate: merged.conversionRate,
         decision: merged.decision,
         status: merged.status,
+        handoffId: merged.handoffId ?? null,
       },
     });
     return mapExperiment(row);

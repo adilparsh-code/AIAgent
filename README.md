@@ -1,4 +1,4 @@
-# AI Income Lab — AIAgent (Phase 2 complete)
+# AI Income Lab — AIAgent (Phase 5 complete)
 
 Discover, validate, build, publish, measure, earn, and scale halal online income opportunities.
 
@@ -211,7 +211,7 @@ evidence-driven validation signals and conclusions, research-informed scoring gu
 history in UI + PostgreSQL, honest provider status reporting, SerpApi-based Google Trends provider,
 expanded test suite, CI workflow, and documentation.
 
-## Phase 2 status (this release)
+## Phase 2 status
 
 Complete: first-class `ResearchSource`, `Validation`, and `AgentRun` models; evidence→source
 traceability ("which provider produced this evidence?"); fully transactional research persistence
@@ -221,7 +221,44 @@ tests running against real PostgreSQL (CI provides a Postgres 16 service); fresh
 verified; lint verified. Client components still never touch Prisma — UI → API → repository →
 Prisma → PostgreSQL.
 
-## Intentionally deferred to Phase 3
+## Phase 5 — AI Income Lab handoff + experiment engine (this release)
+
+Pipeline: **Validated opportunity → handoff contract → accept/reject → experiment → metrics →
+evaluate → WIN/ITERATE/STOP/INSUFFICIENT_DATA → feedback to AIAgent**.
+
+- **Handoff contract** (`src/lib/handoff.ts`): versioned, machine-readable contract at the
+  AIAgent → AI Income Lab boundary (opportunity, validation conclusion, confidence, score, evidence
+  references, monetization options, risks, recommended experiment type, hypothesis, success
+  criteria, budget/time limits, status).
+- **Evidence gate**: an opportunity is `HANDOFF_READY` only when validation permits implementation
+  (`VALIDATED` or `REQUIRES_HUMAN_REVIEW`), evidence/confidence/score exist, and risks are
+  recorded. `REJECTED` opportunities and `NOT_ALLOWED` models never hand off. Ineligible requests
+  return explicit reasons (422) and nothing is persisted.
+- **Handoff API**: `GET/POST /api/handoffs`, `GET/POST /api/handoffs/:id` with
+  `action: accept | reject | createExperiment`. Acceptance re-checks eligibility; experiment
+  creation (status `READY`, no campaigns launch, no money moves) plus the `COMPLETED` handoff
+  transition commit in one transaction.
+- **Experiment engine**: Experiment rows now carry `objective`, `successCriteria`, `metrics` (JSON),
+  `result`, `notes`, `feedback` and a `handoffId`. New statuses (`READY`, `RUNNING`, `STOPPED`,
+  `ITERATING`) and decisions (`WIN`, `STOP`, `INSUFFICIENT_DATA`) extend — never replace — the
+  legacy values.
+- **Evaluation rules** (`src/lib/experiment-evaluation.ts`): conversion rate, profit and ROI are
+  computed only where mathematically possible (zero cost ⇒ ROI undefined, not infinite). Decisions
+  follow explicit documented thresholds (`DECISION_RULES`); missing data ⇒ `INSUFFICIENT_DATA`,
+  never a fabricated verdict. Derived values are labeled `ESTIMATED_DATA`; recorded metrics are
+  `REAL_DATA`. Missing metrics stay missing.
+- **Feedback loop**: `POST /api/experiments/:id/evaluate` computes the decision, persists result +
+  decision + feedback, and returns a structured feedback object (actual metrics/revenue/cost/profit,
+  decision, lessons, evidence generated, recommendation for future research) usable by the research
+  layer.
+- **UI**: new **Handoffs** section (create → accept/reject → create experiment → inspect contract
+  JSON), a "Create Handoff" action on opportunity pages, and an "Evaluate Result" action plus
+  metrics/result/feedback panels on experiment pages.
+- **Security**: all handoff/experiment API inputs are validated and size-capped (ids ≤ 64 chars,
+  text ≤ 600 chars, budgets ≤ 1,000,000, metrics limited to known numeric keys); decisions cannot
+  be re-taken on finished handoffs (409); sample rows stay immutable.
+
+## Intentionally deferred
 
 - Autonomous agent execution (AgentRun rows exist for audit; no agent logic runs yet).
 - Cross-run evidence correlation and historical trend storage.

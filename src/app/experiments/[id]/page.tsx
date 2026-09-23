@@ -17,6 +17,8 @@ export default function ExperimentDetailPage({ params }: { params: { id: string 
   const [isEditing, setIsEditing] = useState(false);
   const [isSample, setIsSample] = useState(false);
   const [editForm, setEditForm] = useState<Partial<Experiment>>({});
+  const [evaluating, setEvaluating] = useState(false);
+  const [evaluateError, setEvaluateError] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadExperiment() {
@@ -49,6 +51,25 @@ export default function ExperimentDetailPage({ params }: { params: { id: string 
     setExperiment({ ...experiment, ...editForm });
     setIsEditing(false);
     router.refresh();
+  };
+
+  const handleEvaluate = async () => {
+    setEvaluating(true);
+    setEvaluateError(null);
+    try {
+      const response = await fetch(`/api/experiments/${params.id}/evaluate`, { method: "POST" });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(typeof data?.error === "string" ? data.error : "Evaluation failed");
+      }
+      const updated = data.experiment as Experiment;
+      setExperiment(updated);
+      setEditForm(updated);
+    } catch (error) {
+      setEvaluateError(error instanceof Error ? error.message : "Evaluation failed");
+    } finally {
+      setEvaluating(false);
+    }
   };
 
   const handleDelete = async () => {
@@ -102,6 +123,9 @@ export default function ExperimentDetailPage({ params }: { params: { id: string 
         {!isEditing && !isSample && (
           <>
             <Button onClick={() => setIsEditing(true)}>Edit</Button>
+            <Button onClick={handleEvaluate} disabled={evaluating}>
+              {evaluating ? "Evaluating…" : "Evaluate Result"}
+            </Button>
             {!isSample && <Button variant="danger" onClick={handleDelete}>Delete</Button>}
           </>
         )}
@@ -112,6 +136,28 @@ export default function ExperimentDetailPage({ params }: { params: { id: string 
           </>
         )}
       </div>
+      {evaluateError && (
+        <Card className="border-red-200 bg-red-50 p-4 text-sm text-red-700">{evaluateError}</Card>
+      )}
+
+      {experiment.feedback && (
+        <Card>
+          <CardHeader
+            title="Experiment feedback (to AIAgent)"
+            subtitle={`Decision: ${experiment.feedback.decision} · data class: ${experiment.feedback.dataClass}`}
+          />
+          <div className="space-y-2 p-5 text-sm">
+            <p><strong>Actual profit:</strong> {experiment.feedback.actualProfit ?? "not recorded"}</p>
+            <div>
+              <strong>Lessons:</strong>
+              <ul className="list-disc pl-5">
+                {experiment.feedback.lessons.map((lesson) => <li key={lesson}>{lesson}</li>)}
+              </ul>
+            </div>
+            <p><strong>Recommendation for future research:</strong> {experiment.feedback.recommendationForFutureResearch}</p>
+          </div>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -180,6 +226,22 @@ export default function ExperimentDetailPage({ params }: { params: { id: string 
             <p><strong>Clicks:</strong> {experiment.clicks}</p>
             <p><strong>Sales:</strong> {experiment.sales}</p>
           </div>
+          {experiment.metrics && Object.keys(experiment.metrics).length > 0 && (
+            <div className="border-t border-slate-100 p-5 text-sm">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Recorded metrics</p>
+              <div className="grid gap-2 md:grid-cols-3">
+                {Object.entries(experiment.metrics).map(([key, value]) => (
+                  <div key={key} className="rounded-md bg-slate-50 px-3 py-2">
+                    <div className="text-xs text-slate-500">{key}</div>
+                    <div className="font-medium">{String(value)}</div>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-slate-400">
+                Missing metrics stay missing — values are never estimated.
+              </p>
+            </div>
+          )}
         </Card>
 
         <Card>
@@ -210,6 +272,15 @@ export default function ExperimentDetailPage({ params }: { params: { id: string 
               <>
                 <p><strong>Expected Result:</strong> {experiment.expectedResult}</p>
                 {experiment.actualResult && <p><strong>Actual Result:</strong> {experiment.actualResult}</p>}
+                {experiment.result && <p><strong>Decision basis:</strong> {experiment.result}</p>}
+                {(experiment.successCriteria ?? []).length > 0 && (
+                  <div>
+                    <strong>Success criteria:</strong>
+                    <ul className="list-disc pl-5">
+                      {(experiment.successCriteria ?? []).map((c) => <li key={c}>{c}</li>)}
+                    </ul>
+                  </div>
+                )}
               </>
             )}
           </div>

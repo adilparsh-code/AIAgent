@@ -24,6 +24,8 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
   const [researching, setResearching] = useState(false);
   const [researchError, setResearchError] = useState<string | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  const [handoffState, setHandoffState] = useState<"idle" | "creating" | "created" | "error">("idle");
+  const [handoffMessage, setHandoffMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function loadOpportunity() {
@@ -94,6 +96,28 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
       setResearchError(error instanceof Error ? error.message : "Research failed");
     } finally {
       setResearching(false);
+    }
+  };
+
+  const handleCreateHandoff = async () => {
+    setHandoffState("creating");
+    setHandoffMessage(null);
+    try {
+      const response = await fetch("/api/handoffs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opportunityId: opp.id }),
+      });
+      const data = (await response.json()) as { error?: string; reasons?: string[] };
+      if (!response.ok) {
+        const reasons = Array.isArray(data?.reasons) ? data.reasons.join(", ") : "";
+        throw new Error(reasons ? `Not ready for handoff: ${reasons}` : data?.error || "Handoff failed");
+      }
+      setHandoffMessage("Handoff created and marked HANDOFF_READY. Open the Handoffs page to accept it.");
+      setHandoffState("created");
+    } catch (error) {
+      setHandoffMessage(error instanceof Error ? error.message : "Handoff failed");
+      setHandoffState("error");
     }
   };
 
@@ -171,7 +195,24 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
             <Button variant="secondary" onClick={() => { setIsEditing(false); setEditForm(opp); }}>Cancel</Button>
           </>
         )}
+        {!isEditing && !isSample && (
+          <Button onClick={handleCreateHandoff} disabled={handoffState === "creating"}>
+            {handoffState === "creating" ? "Validating…" : "Create Handoff"}
+          </Button>
+        )}
       </div>
+      {handoffMessage && (
+        <Card
+          className={`p-4 text-sm ${
+            handoffState === "created"
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-red-200 bg-red-50 text-red-700"
+          }`}
+        >
+          {handoffMessage}{" "}
+          {handoffState === "created" && <Link href="/handoffs" className="underline">Open Handoffs →</Link>}
+        </Card>
+      )}
       {researchError && (
         <Card className="border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <strong>Research error:</strong> {researchError}
