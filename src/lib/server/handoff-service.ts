@@ -106,7 +106,7 @@ function buildContract(
 /**
  * Create a handoff draft. The contract is persisted only if the opportunity
  * passes the evidence-driven eligibility gate; otherwise the reasons are
- * returned and nothing is written.
+ * returned and nothing is written. The opportunity MUST belong to the caller.
  */
 export async function createHandoff(input: {
   opportunityId: unknown;
@@ -114,11 +114,16 @@ export async function createHandoff(input: {
   budgetLimit?: unknown;
   timeLimitDays?: unknown;
   experimentHypothesis?: unknown;
+  ownerId: string;
 }): Promise<
   | { ok: true; handoff: HandoffRecord }
   | { ok: false; reasons: string[] }
 > {
   const opportunityId = safeId(input.opportunityId);
+  // Ownership check happens inside the load: a foreign opportunity is
+  // indistinguishable from a missing one.
+  const owned = await opportunityRepository.getById(opportunityId, input.ownerId);
+  if (!owned) throw new Error(`Opportunity ${opportunityId} was not found`);
   const source = await loadHandoffSource(opportunityId);
   const eligibility = evaluateHandoffEligibility(source);
   if (!eligibility.eligible) return { ok: false, reasons: eligibility.reasons };
@@ -142,25 +147,27 @@ export async function createHandoff(input: {
   return { ok: true, handoff };
 }
 
-export async function getHandoff(id: string): Promise<HandoffRecord | null> {
-  return handoffRepository.getById(safeId(id));
+export async function getHandoff(id: string, ownerId?: string): Promise<HandoffRecord | null> {
+  return handoffRepository.getById(safeId(id), ownerId);
 }
 
-export async function listHandoffs(limit?: unknown): Promise<HandoffRecord[]> {
+export async function listHandoffs(limit?: unknown, ownerId?: string): Promise<HandoffRecord[]> {
   const max = typeof limit === "number" && Number.isFinite(limit) ? limit : 50;
-  return handoffRepository.getAll(max);
+  return handoffRepository.getAll(max, ownerId);
 }
 
 /**
  * Accept or reject a HANDOFF_READY handoff. Acceptance requires the persisted
  * contract to still pass eligibility (facts may have changed since creation).
+ * Owner-scoped: only the opportunity's owner may decide the handoff.
  */
 export async function decideHandoff(
   id: string,
   decision: "accept" | "reject",
-  rejectionReason?: string,
+  rejectionReason: string | undefined,
+  ownerId: string,
 ): Promise<HandoffRecord | null> {
-  const handoff = await handoffRepository.getById(safeId(id));
+  const handoff = await handoffRepository.getById(safeId(id), ownerId);
   if (!handoff) return null;
   if (handoff.status !== "HANDOFF_READY") {
     throw new Error(`Handoff ${id} is ${handoff.status} and cannot be re-decided`);
@@ -184,11 +191,13 @@ export async function decideHandoff(
  */
 export async function createExperimentFromHandoff(
   handoffIdValue: string,
-  overrides?: { budget?: unknown; startDate?: unknown },
+  overrides: { budget?: unknown; startDate?: unknown } | undefined,
+  ownerId: string,
 ): Promise<Experiment | null> {
   const id = safeId(handoffIdValue);
   const prisma = getPrisma();
-  const handoff = await handoffRepository.getById(id);
+  // Owner-scoped: a handoff owned by another user is "not found".
+  const handoff = await handoffRepository.getById(id, ownerId);
   if (!handoff) throw new Error(`Handoff ${id} was not found`);
   if (handoff.status !== "ACCEPTED") {
     throw new Error(`Handoff ${id} must be ACCEPTED before an experiment can be created`);

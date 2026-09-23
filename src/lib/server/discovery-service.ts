@@ -43,12 +43,15 @@ export async function executeDiscoveryRun(input: {
   category: DiscoveryCategory;
   maxCandidates?: number;
   providers?: ResearchProvider[];
+  ownerId?: string | null;
 }): Promise<DiscoveryRunResult> {
   const providers = input.providers ?? getResearchProviders();
   const run = await discoveryRepository.createRunning({
     topic: input.topic,
     category: input.category,
     notes: "Candidates are hypotheses until researched. Missing evidence is not support.",
+    // From the authenticated session (Phase 6A); never from client payloads.
+    ownerId: input.ownerId ?? null,
   });
 
   try {
@@ -71,6 +74,7 @@ async function executeDiscoveryRunBody(
     topic: string;
     category: DiscoveryCategory;
     maxCandidates?: number;
+    ownerId?: string | null;
   },
   providers: ResearchProvider[],
 ): Promise<DiscoveryRunResult> {
@@ -123,6 +127,7 @@ async function executeDiscoveryRunBody(
           handoffStatus,
           errors: researchRun.errors,
         }).recommendedNextExperiment,
+        input.ownerId ?? null,
       );
 
       const persistedResearch = { ...researchRun, opportunityId: opportunity.id };
@@ -217,10 +222,13 @@ async function executeDiscoveryRunBody(
   });
 }
 
-export async function prepareHandoff(candidateId: string): Promise<
+export async function prepareHandoff(
+  candidateId: string,
+  ownerId: string,
+): Promise<
   { ok: true; candidate: EvaluatedCandidateView; handoff: IncomeLabHandoff } | { ok: false; error: string; status: number }
 > {
-  const found = await discoveryRepository.getCandidate(candidateId);
+  const found = await discoveryRepository.getCandidateForOwner(candidateId, ownerId);
   if (!found) return { ok: false, error: "Candidate not found", status: 404 };
   const payload = found.candidate.handoffPayload;
   if (!payload || found.candidate.handoffStatus === "NOT_READY") {

@@ -10,17 +10,17 @@ function metricsJson(metrics: Product["metrics"] | undefined): Prisma.InputJsonV
 }
 
 export class PrismaProductRepository implements Repository<Product> {
-  async getAll(): Promise<Product[]> {
+  async getAll(ownerId?: string): Promise<Product[]> {
     const rows = await getPrisma().product.findMany({
-      where: { isSample: false },
+      where: ownerId ? { isSample: false, ownerId } : { isSample: false },
       orderBy: { updatedAt: "desc" },
     });
     return rows.map(mapProduct);
   }
 
-  async getById(id: string): Promise<Product | null> {
+  async getById(id: string, ownerId?: string): Promise<Product | null> {
     const row = await getPrisma().product.findFirst({
-      where: { id, isSample: false },
+      where: ownerId ? { id, isSample: false, ownerId } : { id, isSample: false },
     });
     return row ? mapProduct(row) : null;
   }
@@ -33,23 +33,27 @@ export class PrismaProductRepository implements Repository<Product> {
     return row?.isSample ?? false;
   }
 
-  async create(item: Omit<Product, "id" | "createdAt" | "updatedAt">): Promise<Product> {
+  async create(
+    item: Omit<Product, "id" | "createdAt" | "updatedAt"> & { ownerId?: string | null },
+  ): Promise<Product> {
+    const { ownerId, ...rest } = item;
     const row = await getPrisma().product.create({
       data: {
-        name: item.name,
-        type: item.type,
-        targetAudience: item.targetAudience,
-        opportunityId: item.opportunityId,
-        status: item.status,
-        price: item.price,
-        cost: item.cost,
-        revenue: item.revenue,
-        platform: item.platform,
-        productUrl: item.productUrl,
-        affiliateUrl: item.affiliateUrl,
-        metrics: metricsJson(item.metrics),
-        notes: item.notes,
+        name: rest.name,
+        type: rest.type,
+        targetAudience: rest.targetAudience,
+        opportunityId: rest.opportunityId,
+        status: rest.status,
+        price: rest.price,
+        cost: rest.cost,
+        revenue: rest.revenue,
+        platform: rest.platform,
+        productUrl: rest.productUrl,
+        affiliateUrl: rest.affiliateUrl,
+        metrics: metricsJson(rest.metrics),
+        notes: rest.notes,
         isSample: false,
+        ownerId: ownerId ?? null,
       },
     });
     return mapProduct(row);
@@ -88,6 +92,14 @@ export class PrismaProductRepository implements Repository<Product> {
     if (!existing || existing.isSample) return false;
     await getPrisma().product.delete({ where: { id } });
     return true;
+  }
+
+  /** Owner-scoped delete used by protected routes. */
+  async deleteForOwner(id: string, ownerId: string): Promise<boolean> {
+    const result = await getPrisma().product.deleteMany({
+      where: { id, ownerId, isSample: false },
+    });
+    return result.count > 0;
   }
 }
 

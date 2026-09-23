@@ -23,6 +23,23 @@ export class PrismaAgentRunRepository {
     return rows.map(mapAgentRun);
   }
 
+  /** Owner-scoped: only runs the user created (Phase 6A). */
+  async getByIdForOwner(id: string, ownerId: string): Promise<AgentRunRecord | null> {
+    const row = await getPrisma().agentRun.findFirst({
+      where: { id, ownerId },
+    });
+    return row ? mapAgentRun(row) : null;
+  }
+
+  async getByAgentIdForOwner(agentId: string, ownerId: string, limit = 20): Promise<AgentRunRecord[]> {
+    const rows = await getPrisma().agentRun.findMany({
+      where: { agentId, ownerId },
+      orderBy: { startedAt: "desc" },
+      take: Math.min(100, Math.max(1, limit)),
+    });
+    return rows.map(mapAgentRun);
+  }
+
   async create(input: {
     agentId: string;
     task: string;
@@ -33,6 +50,7 @@ export class PrismaAgentRunRepository {
     metadata?: unknown;
     startedAt?: Date;
     completedAt?: Date | null;
+    ownerId?: string | null;
   }): Promise<AgentRunRecord> {
     try {
       const row = await getPrisma().agentRun.create({
@@ -40,6 +58,8 @@ export class PrismaAgentRunRepository {
           agentId: input.agentId,
           task: input.task,
           status: input.status ?? "RUNNING",
+          // Assigned by the API route from the authenticated session only.
+          ownerId: input.ownerId ?? null,
           startedAt: input.startedAt ?? new Date(),
           completedAt: input.completedAt ?? null,
           input: (input.input ?? undefined) as never,

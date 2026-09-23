@@ -3,14 +3,17 @@ import { apiError } from "@/lib/api-error";
 import { isDbUnavailableError } from "@/lib/db";
 import { safeId } from "@/lib/discovery-input";
 import { discoveryRepository } from "@/lib/server/repositories/discovery";
+import { requireUser } from "@/lib/server/authz";
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   try {
+    const user = await requireUser();
     const id = safeId(params.id);
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
-    const found = await discoveryRepository.getCandidate(id);
+    // Owner-scoped: candidates are only visible through their own run.
+    const found = await discoveryRepository.getCandidateForOwner(id, user.id);
     if (!found) {
       return NextResponse.json({ error: "Candidate not found" }, { status: 404 });
     }

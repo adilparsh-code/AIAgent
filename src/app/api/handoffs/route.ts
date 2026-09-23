@@ -2,19 +2,21 @@ import { NextResponse } from "next/server";
 import { createHandoff, listHandoffs } from "@/lib/server/handoff-service";
 import { apiError } from "@/lib/api-error";
 import { isDbUnavailableError } from "@/lib/db";
+import { requireUser } from "@/lib/server/authz";
 
 const MAX_BODY_BYTES = 8_192;
 
 /**
- * Phase 5 — Opportunity Handoff API.
- * GET  /api/handoffs            → list handoffs
- * POST /api/handoffs            → create + validate handoff for an opportunity
+ * Phase 5 — Opportunity Handoff API. Phase 6A: authenticated and owner-scoped.
+ * GET  /api/handoffs            → list the caller's handoffs
+ * POST /api/handoffs            → create + validate handoff for an OWNED opportunity
  */
 export async function GET(request: Request) {
   try {
+    const user = await requireUser();
     const { searchParams } = new URL(request.url);
     const limit = Number(searchParams.get("limit") ?? 50);
-    const rows = await listHandoffs(Number.isFinite(limit) ? limit : 50);
+    const rows = await listHandoffs(Number.isFinite(limit) ? limit : 50, user.id);
     return NextResponse.json(rows);
   } catch (error) {
     if (isDbUnavailableError(error)) {
@@ -26,6 +28,7 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
+    const user = await requireUser();
     const raw = await request.text();
     if (raw.length > MAX_BODY_BYTES) {
       return NextResponse.json({ error: "Request body too large" }, { status: 413 });
@@ -41,7 +44,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "opportunityId is required" }, { status: 400 });
     }
 
-    const result = await createHandoff(body);
+    // Ownership enforced inside the service: a foreign opportunity is "not found".
+    const result = await createHandoff({ ...body, ownerId: user.id });
     if (!result.ok) {
       return NextResponse.json(
         {
@@ -58,6 +62,9 @@ export async function POST(request: Request) {
     }
     if (error instanceof Error && /^Opportunity .+ was not found$/.test(error.message)) {
       return NextResponse.json({ error: error.message }, { status: 404 });
+    }
+    if (error instanceof SyntaxError) {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
     }
     return apiError(error, "Failed to create handoff");
   }

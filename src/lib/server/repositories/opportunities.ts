@@ -40,7 +40,8 @@ const SCORE_FIELDS = [
 ] as const;
 
 export class PrismaOpportunityRepository implements Repository<Opportunity> {
-  async getAll(): Promise<Opportunity[]> {
+  /** Unscoped access — API routes must apply ownership checks (Phase 6A). */
+  async getAllUnscoped(): Promise<Opportunity[]> {
     const rows = await getPrisma().opportunity.findMany({
       where: { isSample: false },
       orderBy: { updatedAt: "desc" },
@@ -48,9 +49,25 @@ export class PrismaOpportunityRepository implements Repository<Opportunity> {
     return rows.map(mapOpportunity);
   }
 
-  async getById(id: string): Promise<Opportunity | null> {
+  async getAll(ownerId?: string): Promise<Opportunity[]> {
+    const rows = await getPrisma().opportunity.findMany({
+      where: ownerId ? { isSample: false, ownerId } : { isSample: false },
+      orderBy: { updatedAt: "desc" },
+    });
+    return rows.map(mapOpportunity);
+  }
+
+  /** Unscoped by-id fetch — authorization is applied by the caller. */
+  async getByIdUnscoped(id: string): Promise<Opportunity | null> {
     const row = await getPrisma().opportunity.findFirst({
       where: { id, isSample: false },
+    });
+    return row ? mapOpportunity(row) : null;
+  }
+
+  async getById(id: string, ownerId?: string): Promise<Opportunity | null> {
+    const row = await getPrisma().opportunity.findFirst({
+      where: ownerId ? { id, isSample: false, ownerId } : { id, isSample: false },
     });
     return row ? mapOpportunity(row) : null;
   }
@@ -63,10 +80,18 @@ export class PrismaOpportunityRepository implements Repository<Opportunity> {
     return row?.isSample ?? false;
   }
 
-  async create(item: Omit<Opportunity, "id" | "createdAt" | "updatedAt">): Promise<Opportunity> {
+  async create(
+    item: Omit<Opportunity, "id" | "createdAt" | "updatedAt"> & { ownerId?: string | null },
+  ): Promise<Opportunity> {
     const overallScore = calculateOverallScore(scoreBreakdown(item));
+    const { ownerId, ...rest } = item;
     const row = await getPrisma().opportunity.create({
-      data: opportunityCreateData({ ...item, overallScore }),
+      data: {
+        ...opportunityCreateData({ ...rest, overallScore }),
+        // Ownership is ALWAYS assigned server-side from the authenticated
+        // session (Phase 6A); client-supplied values are ignored by routes.
+        ownerId: ownerId ?? null,
+      },
     });
     return mapOpportunity(row);
   }
@@ -113,11 +138,32 @@ export class PrismaOpportunityRepository implements Repository<Opportunity> {
     return mapOpportunity(row);
   }
 
+  /** Owner-scoped update used by protected routes; no-ops on another user's row. */
+  async updateForOwner(
+    id: string,
+    ownerId: string,
+    updates: Partial<Opportunity>,
+  ): Promise<Opportunity | null> {
+    const existing = await getPrisma().opportunity.findFirst({
+      where: { id, isSample: false, ownerId },
+    });
+    if (!existing) return null;
+    return this.update(id, updates);
+  }
+
   async delete(id: string): Promise<boolean> {
     const existing = await getPrisma().opportunity.findUnique({ where: { id } });
     if (!existing || existing.isSample) return false;
     await getPrisma().opportunity.delete({ where: { id } });
     return true;
+  }
+
+  /** Owner-scoped delete used by protected routes; no-ops on another user's row. */
+  async deleteForOwner(id: string, ownerId: string): Promise<boolean> {
+    const result = await getPrisma().opportunity.deleteMany({
+      where: { id, ownerId, isSample: false },
+    });
+    return result.count > 0;
   }
 
   async archive(id: string): Promise<Opportunity | null> {

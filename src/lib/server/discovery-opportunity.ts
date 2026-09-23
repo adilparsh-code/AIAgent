@@ -86,6 +86,7 @@ export async function createOpportunityForCandidate(
   seed: DiscoveryCandidateSeed,
   bundle: OpportunityEvidenceBundle | null,
   nextAction: string,
+  ownerId?: string | null,
 ): Promise<Opportunity> {
   const scores = scoresFromEvidence(bundle);
   return opportunityRepository.create({
@@ -113,5 +114,7 @@ export async function createOpportunityForCandidate(
     evidence: [],
     risks: bundle?.contradictions ?? [],
     nextAction,
+    // Created for the authenticated user who ran discovery.
+    ownerId: ownerId ?? null,
   });
 }

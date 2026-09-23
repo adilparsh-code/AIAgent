@@ -171,6 +171,53 @@ enum HandoffStatus {
   PREPARED
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  DISABLED
+}
+
+/// Multi-tenant account (Phase 6A). passwordHash is scrypt-format
+/// (scrypt$N$r$p$salt$hash) and is NEVER returned through APIs.
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  name         String     @default("")
+  role         UserRole   @default(USER)
+  status       UserStatus @default(ACTIVE)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  sessions       Session[]
+  opportunities  Opportunity[]
+  products       Product[]
+  revenueEntries RevenueEntry[]
+  discoveryRuns  DiscoveryRun[]
+  agentRuns      AgentRun[]
+
+  @@index([status])
+}
+
+/// Server-side session. Only the SHA-256 hash of the session token is stored,
+/// so a database leak never exposes usable session tokens.
+model Session {
+  id         String   @id @default(cuid())
+  tokenHash  String   @unique
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 model Opportunity {
   id                        String            @id @default(cuid())
   title                     String
@@ -191,6 +238,8 @@ model Opportunity {
   overallScore              Decimal           @db.Decimal(6, 1)
   confidence                Int
   status                    OpportunityStatus
+  ownerId                   String?
+  owner                     User?             @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   evidence                  String[]          @default([])
   risks                     String[]          @default([])
   nextAction                String            @default("")
@@ -215,6 +264,7 @@ model Opportunity {
   @@index([overallScore])
   @@index([updatedAt])
   @@index([isSample])
+  @@index([ownerId])
 }
 
 model Product {
@@ -234,6 +284,8 @@ model Product {
   metrics        Json?
   notes          String         @default("")
   isSample       Boolean        @default(false)
+  ownerId        String?
+  owner          User?          @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt
   revenueEntries RevenueEntry[]
@@ -241,6 +293,7 @@ model Product {
   @@index([opportunityId])
   @@index([status])
   @@index([isSample])
+  @@index([ownerId])
 }
 
 model Experiment {
@@ -328,6 +381,8 @@ model RevenueEntry {
   currency        String        @default("USD")
   referenceNote   String        @default("")
   isSample        Boolean       @default(false)
+  ownerId         String?
+  owner           User?         @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -336,6 +391,7 @@ model RevenueEntry {
   @@index([productId])
   @@index([revenueSource])
   @@index([isSample])
+  @@index([ownerId])
 }
 
 model Agent {
@@ -365,6 +421,8 @@ model AgentRun {
   agent       Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
   task        String
   status      AgentRunStatus @default(RUNNING)
+  ownerId     String?
+  owner       User?          @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   startedAt   DateTime       @default(now())
   completedAt DateTime?
   input       Json?
@@ -374,6 +432,7 @@ model AgentRun {
   createdAt   DateTime       @default(now())
 
   @@index([agentId])
+  @@index([ownerId])
   @@index([status])
   @@index([startedAt])
 }
@@ -510,6 +569,8 @@ model DiscoveryRun {
   topic                String
   category             String
   status               DiscoveryRunStatus
+  ownerId              String?
+  owner                User?                @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   startedAt            DateTime             @default(now())
   completedAt          DateTime?
   candidateCount       Int                  @default(0)
@@ -520,6 +581,7 @@ model DiscoveryRun {
   candidates           DiscoveryCandidate[]
 
   @@index([status])
+  @@index([ownerId])
   @@index([startedAt])
   @@index([category])
 }

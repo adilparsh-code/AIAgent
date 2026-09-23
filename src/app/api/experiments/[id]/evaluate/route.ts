@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { experimentRepository } from "@/lib/server/repositories/experiments";
 import { apiError } from "@/lib/api-error";
+import { requireUser } from "@/lib/server/authz";
 import {
   buildExperimentFeedback,
   decideExperiment,
@@ -16,6 +17,11 @@ function safeId(value: string): string {
 }
 
 /**
+ * Phase 6A — evaluation is owner-scoped: only the owning user may preview or
+ * run evaluation + feedback on an experiment. Foreign rows answer 404.
+ */
+
+/**
  * Phase 5 — Experiment evaluation + feedback.
  * GET  /api/experiments/:id/evaluate → evaluation preview (nothing persisted)
  * POST /api/experiments/:id/evaluate → evaluate recorded metrics, persist
@@ -24,7 +30,8 @@ function safeId(value: string): string {
  */
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   try {
-    const experiment = await experimentRepository.getById(safeId(params.id));
+    const user = await requireUser();
+    const experiment = await experimentRepository.getById(safeId(params.id), user.id);
     if (!experiment) return NextResponse.json({ error: "Experiment not found" }, { status: 404 });
     const metrics = (experiment.metrics ?? {}) as ExperimentMetrics;
     const hasTraffic = (experiment.visitors ?? 0) > 0 || (experiment.clicks ?? 0) > 0;
@@ -39,7 +46,8 @@ export async function GET(_request: Request, { params }: { params: { id: string 
 
 export async function POST(_request: Request, { params }: { params: { id: string } }) {
   try {
-    const experiment = await experimentRepository.getById(safeId(params.id));
+    const user = await requireUser();
+    const experiment = await experimentRepository.getById(safeId(params.id), user.id);
     if (!experiment) return NextResponse.json({ error: "Experiment not found" }, { status: 404 });
 
     const metrics = (experiment.metrics ?? {}) as ExperimentMetrics;

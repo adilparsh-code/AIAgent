@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
+import { apiGet, apiSend } from "@/lib/http";
 import {
   LayoutDashboard,
   Lightbulb,
@@ -16,6 +17,7 @@ import {
   Search,
   X,
   ArrowRightLeft,
+  LogOut,
 } from "lucide-react";
 
 const NAV = [
@@ -58,8 +60,41 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
+interface SessionUser {
+  id: string;
+  email: string;
+  name: string;
+  role: "USER" | "ADMIN";
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [open, setOpen] = useState(false);
+  const [user, setUser] = useState<SessionUser | null>(null);
+  const router = useRouter();
+
+  useEffect(() => {
+    let cancelled = false;
+    apiGet<{ user: SessionUser }>('/api/auth/me')
+      .then((data) => {
+        if (!cancelled) setUser(data.user);
+      })
+      .catch(() => {
+        if (!cancelled) setUser(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  async function handleLogout() {
+    try {
+      await apiSend('/api/auth/logout', 'POST');
+    } catch {
+      // Cookie is cleared by the server regardless; land on the login page.
+    }
+    router.push('/login');
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="sticky top-0 z-30 border-b border-slate-200 bg-white">
@@ -73,8 +108,36 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </button>
           <div className="font-bold">AI Income Lab</div>
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
-            Phase 4 · SAMPLE DATA
+            Phase 6A · SAMPLE DATA
           </span>
+          <div className="ml-auto flex items-center gap-3">
+            {user ? (
+              <>
+                <span
+                  className="hidden text-xs text-slate-600 sm:inline"
+                  title={user.email}
+                >
+                  {user.name || user.email}
+                  {user.role === "ADMIN" ? " · ADMIN" : ""}
+                </span>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  aria-label="Log out"
+                >
+                  <LogOut className="h-4 w-4" aria-hidden />
+                  <span className="hidden sm:inline">Log out</span>
+                </button>
+              </>
+            ) : (
+              <Link
+                href="/login"
+                className="rounded-md bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
+              >
+                Sign in
+              </Link>
+            )}
+          </div>
         </div>
       </header>
       <div className="mx-auto flex max-w-7xl gap-6 px-4 py-6">

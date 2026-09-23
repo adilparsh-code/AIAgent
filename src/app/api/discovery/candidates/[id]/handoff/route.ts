@@ -3,19 +3,22 @@ import { apiError } from "@/lib/api-error";
 import { isDbUnavailableError } from "@/lib/db";
 import { safeId } from "@/lib/discovery-input";
 import { prepareHandoff } from "@/lib/server/discovery-service";
+import { requireUser } from "@/lib/server/authz";
 
 /**
  * POST /api/discovery/candidates/[id]/handoff
  * Prepares the machine-readable AI Income Lab handoff contract.
  * Does not execute Income Lab implementation actions.
+ * Phase 6A: owner-scoped — only the run's owner may prepare a handoff.
  */
 export async function POST(_request: Request, { params }: { params: { id: string } }) {
   try {
+    const user = await requireUser();
     const id = safeId(params.id);
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
-    const result = await prepareHandoff(id);
+    const result = await prepareHandoff(id, user.id);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }

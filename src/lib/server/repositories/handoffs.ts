@@ -9,8 +9,11 @@ import type { HandoffRecord } from "../../types";
  * machine-readable while remaining queryable.
  */
 export class PrismaHandoffRepository {
-  async getById(id: string): Promise<HandoffRecord | null> {
-    const row = await getPrisma().handoff.findUnique({ where: { id } });
+  /** Owner-scoped through the owning Opportunity (Phase 6A ownership model). */
+  async getById(id: string, ownerId?: string): Promise<HandoffRecord | null> {
+    const row = await getPrisma().handoff.findFirst({
+      where: ownerId ? { id, opportunity: { ownerId } } : { id },
+    });
     return row ? mapHandoff(row) : null;
   }
 
@@ -22,8 +25,9 @@ export class PrismaHandoffRepository {
     return rows.map(mapHandoff);
   }
 
-  async getAll(limit = 50): Promise<HandoffRecord[]> {
+  async getAll(limit = 50, ownerId?: string): Promise<HandoffRecord[]> {
     const rows = await getPrisma().handoff.findMany({
+      where: ownerId ? { opportunity: { ownerId } } : undefined,
       orderBy: { createdAt: "desc" },
       take: Math.min(100, Math.max(1, limit)),
     });

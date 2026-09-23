@@ -3,14 +3,17 @@ import { apiError } from "@/lib/api-error";
 import { isDbUnavailableError } from "@/lib/db";
 import { safeId } from "@/lib/discovery-input";
 import { discoveryRepository } from "@/lib/server/repositories/discovery";
+import { requireUser } from "@/lib/server/authz";
 
 export async function GET(_request: Request, { params }: { params: { id: string } }) {
   try {
+    const user = await requireUser();
     const id = safeId(params.id);
     if (!id) {
       return NextResponse.json({ error: "id is required" }, { status: 400 });
     }
-    const run = await discoveryRepository.getById(id);
+    // Owner-scoped: another user's discovery run is "not found".
+    const run = await discoveryRepository.getByIdForOwner(id, user.id);
     if (!run) {
       return NextResponse.json({ error: "Discovery run not found" }, { status: 404 });
     }

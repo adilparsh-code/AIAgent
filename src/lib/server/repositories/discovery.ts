@@ -25,6 +25,44 @@ export class PrismaDiscoveryRepository {
     return rows.map(mapDiscoveryRun);
   }
 
+  /** Owner-scoped fetch: another user's run is null (Phase 6A). */
+  async getByIdForOwner(id: string, ownerId: string): Promise<DiscoveryRunResult | null> {
+    const row = await getPrisma().discoveryRun.findFirst({
+      where: { id, ownerId },
+      include: includeCandidates,
+    });
+    return row ? mapDiscoveryRun(row) : null;
+  }
+
+  async listForOwner(ownerId: string, limit = 20): Promise<DiscoveryRunResult[]> {
+    const rows = await getPrisma().discoveryRun.findMany({
+      where: { ownerId },
+      include: includeCandidates,
+      orderBy: { startedAt: "desc" },
+      take: Math.min(50, Math.max(1, limit)),
+    });
+    return rows.map(mapDiscoveryRun);
+  }
+
+  /**
+   * Owner-scoped candidate fetch: the candidate is only visible through its
+   * discovery run's owner.
+   */
+  async getCandidateForOwner(
+    candidateId: string,
+    ownerId: string,
+  ): Promise<{ run: DiscoveryRunResult; candidate: EvaluatedCandidateView } | null> {
+    const row = await getPrisma().discoveryCandidate.findFirst({
+      where: { id: candidateId, discoveryRun: { ownerId } },
+      include: { discoveryRun: { include: includeCandidates } },
+    });
+    if (!row) return null;
+    return {
+      run: mapDiscoveryRun(row.discoveryRun),
+      candidate: mapDiscoveryCandidate(row),
+    };
+  }
+
   async getCandidate(candidateId: string): Promise<{ run: DiscoveryRunResult; candidate: EvaluatedCandidateView } | null> {
     const row = await getPrisma().discoveryCandidate.findUnique({
       where: { id: candidateId },
@@ -37,13 +75,19 @@ export class PrismaDiscoveryRepository {
     };
   }
 
-  async createRunning(input: { topic: string; category: string; notes?: string }): Promise<DiscoveryRunResult> {
+  async createRunning(input: {
+    topic: string;
+    category: string;
+    notes?: string;
+    ownerId?: string | null;
+  }): Promise<DiscoveryRunResult> {
     const row = await getPrisma().discoveryRun.create({
       data: {
         topic: input.topic,
         category: input.category,
         status: "RUNNING",
         notes: input.notes ?? "",
+        ownerId: input.ownerId ?? null,
       },
       include: includeCandidates,
     });

@@ -287,11 +287,42 @@ evaluate → WIN/ITERATE/STOP/INSUFFICIENT_DATA → feedback to AIAgent**.
   text ≤ 600 chars, budgets ≤ 1,000,000, metrics limited to known numeric keys); decisions cannot
   be re-taken on finished handoffs (409); sample rows stay immutable.
 
+## Phase 6A — Authentication + multi-tenancy
+
+Every user's data is private. The full Phase 1–5 pipeline (discover → research → validate → score →
+handoff → experiment → evaluate → feedback) is unchanged — it is now owned per user.
+
+- **Accounts**: email + password (scrypt-hashed via node:crypto, N=16384/r=8/p=1; plaintext is never
+  persisted or logged; hashes never leave the server). `POST /api/auth/register`, `POST /api/auth/login`,
+  `POST /api/auth/logout`, `GET /api/auth/me`. Login/registration failures are generic (no account
+  enumeration) and rate-limited (10 login attempts / 15 min per IP+email; 10 registrations / hour per IP).
+- **Sessions**: server-side `Session` rows keyed by the SHA-256 hash of an opaque 256-bit token;
+  the browser only receives an HttpOnly, SameSite=Lax cookie (Secure in production) with a 7-day
+  expiry. Logout deletes the server row. No tokens in localStorage, no secrets in client bundles.
+- **Ownership model**: ownership follows the data tree. `Opportunity`, `Product`, `RevenueEntry`,
+  `DiscoveryRun` (direct `ownerId`), and `AgentRun` (who created it) are roots; `ResearchRun`,
+  `ResearchSource`, `Evidence`, `Findings`, `Validation`, `Handoff`, and `Experiment` are reached
+  through their Opportunity, so no ownership data is duplicated.
+- **Authorization**: reusable helpers (`requireUser`, `requireAdmin`, `requireOwnedResource`) run in
+  every protected route before any data access. Identity comes only from the session cookie — client
+  ids/headers/bodies can never influence it. A record that belongs to someone else answers **404**
+  (indistinguishable from a missing row) so cross-tenant probing learns nothing. Unowned legacy/sample
+  rows are visible only to pinned sample surfaces, not to arbitrary users. Mutating the shared agent
+  catalog is admin-only; `ADMIN` gets no blanket access to other users' private records.
+- **Pages**: `/login` and `/register`; unauthenticated deep links redirect to `/login?returnTo=…` via
+  middleware (middleware is a UX gate — every API re-verifies server-side). The shell shows the signed-in
+  identity with a logout button.
+- **Migration**: `20260923120000_phase6a_auth_multitenancy` is purely additive — creates `User`,
+  `Session`, ownership columns and indexes. Existing Phase 1–5 rows keep working (owners are NULL
+  until explicitly reassigned); nothing is reset or rewritten.
+
 ## Intentionally deferred
 
 - Autonomous agent execution (AgentRun rows exist for audit; no agent logic runs yet).
 - Executing AI Income Lab implementation / revenue actions after handoff.
 - Cross-run evidence correlation and historical trend storage.
 - Automatic application of suggested scores (still a human-confirmed suggestion).
-- Authentication/multi-tenancy for the dashboard.
+- OAuth/SSO and email verification; password reset flow.
+- Distributed rate limiting (the in-memory boundary protects a single instance only) and
+  account-recovery flows.
 - Broader provider coverage and richer query strategies.

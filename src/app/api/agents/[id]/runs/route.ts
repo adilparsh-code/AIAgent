@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { agentRepository } from "@/lib/server/repositories/agents";
 import { agentRunRepository } from "@/lib/server/repositories/agent-runs";
 import { apiError } from "@/lib/api-error";
+import { requireUser } from "@/lib/server/authz";
 import type { AgentRunStatus } from "@/lib/types";
 
 const MAX_TASK_LENGTH = 500;
@@ -9,16 +10,18 @@ const MAX_JSON_BYTES = 32 * 1024;
 
 /**
  * GET /api/agents/[id]/runs?limit=20 — persisted execution records for an agent.
+ * Phase 6A: only the calling user's runs are returned.
  */
 export async function GET(request: Request, { params }: { params: { id: string } }) {
   try {
+    const user = await requireUser();
     const { searchParams } = new URL(request.url);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit") ?? 20) || 20));
     const agent = await agentRepository.getById(params.id);
     if (!agent) {
       return NextResponse.json({ error: "Agent not found" }, { status: 404 });
     }
-    const runs = await agentRunRepository.getByAgentId(params.id, limit);
+    const runs = await agentRunRepository.getByAgentIdForOwner(params.id, user.id, limit);
     return NextResponse.json({ agent, runs });
   } catch (error) {
     return apiError(error, "Failed to load agent runs");
@@ -32,6 +35,7 @@ export async function GET(request: Request, { params }: { params: { id: string }
  */
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
+    const user = await requireUser();
     const raw = await request.text();
     if (raw.length > MAX_JSON_BYTES) {
       return NextResponse.json({ error: "Request body too large" }, { status: 413 });
@@ -70,6 +74,8 @@ export async function POST(request: Request, { params }: { params: { id: string 
       output: body.output,
       errors,
       metadata: body.metadata,
+      // Ownership from the session, never the request body.
+      ownerId: user.id,
     });
     return NextResponse.json(run, { status: 201 });
   } catch (error) {

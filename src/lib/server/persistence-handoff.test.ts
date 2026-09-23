@@ -39,18 +39,37 @@ function makeOpportunityData(id: string) {
 describe.skipIf(!hasDb)("handoff persistence (real PostgreSQL)", () => {
   const prisma = getPrisma();
   const createdOpportunityIds: string[] = [];
+  const createdUserIds: string[] = [];
+
+  /** Create a test user and return its id. */
+  async function makeTestUser(): Promise<string> {
+    const { hashPassword } = await import("../server/password");
+    const user = await prisma.user.create({
+      data: {
+        email: `handoff-test-${uniqueSuffix()}@example.com`,
+        passwordHash: await hashPassword("test-password-123"),
+        name: "Handoff Test User",
+      },
+    });
+    createdUserIds.push(user.id);
+    return user.id;
+  }
 
   afterAll(async () => {
     for (const id of createdOpportunityIds) {
       await prisma.opportunity.delete({ where: { id } }).catch(() => undefined);
     }
+    for (const id of createdUserIds) {
+      await prisma.user.delete({ where: { id } }).catch(() => undefined);
+    }
     await prisma.$disconnect();
   });
 
   it("handoff lifecycle persists and transitions DRAFT → HANDOFF_READY → ACCEPTED → COMPLETED", async () => {
+    const ownerId = await makeTestUser();
     const oppId = `test-opp-${uniqueSuffix()}`;
     createdOpportunityIds.push(oppId);
-    await prisma.opportunity.create({ data: makeOpportunityData(oppId) });
+    await prisma.opportunity.create({ data: { ...makeOpportunityData(oppId), ownerId } });
 
     const { createHandoff, decideHandoff, createExperimentFromHandoff } = await import("./handoff-service");
     const { researchRepository } = await import("./repositories/research");
@@ -99,7 +118,7 @@ describe.skipIf(!hasDb)("handoff persistence (real PostgreSQL)", () => {
     });
 
     // 1. Create — must pass the evidence gate.
-    const created = await createHandoff({ opportunityId: oppId });
+    const created = await createHandoff({ opportunityId: oppId, ownerId });
     expect(created.ok).toBe(true);
     if (!created.ok) return;
     const handoffId = created.handoff.id;
@@ -109,12 +128,12 @@ describe.skipIf(!hasDb)("handoff persistence (real PostgreSQL)", () => {
     expect(created.handoff.confidence).toBeCloseTo(0.75, 2);
 
     // 2. Accept.
-    const accepted = await decideHandoff(handoffId, "accept");
+    const accepted = await decideHandoff(handoffId, "accept", undefined, ownerId);
     expect(accepted?.status).toBe("ACCEPTED");
     expect(accepted?.acceptedAt).toBeTruthy();
 
     // 3. Create experiment from the accepted handoff (transactional).
-    const experiment = await createExperimentFromHandoff(handoffId, { budget: 250 });
+    const experiment = await createExperimentFromHandoff(handoffId, { budget: 250 }, ownerId);
     expect(experiment).not.toBeNull();
     expect(experiment?.status).toBe("READY");
     expect(experiment?.budget).toBe(250);
@@ -126,19 +145,20 @@ describe.skipIf(!hasDb)("handoff persistence (real PostgreSQL)", () => {
     expect(completed.status).toBe("COMPLETED");
 
     // 4. Re-deciding a COMPLETED handoff is rejected.
-    await expect(decideHandoff(handoffId, "accept")).rejects.toThrow("cannot be re-decided");
+    await expect(decideHandoff(handoffId, "accept", undefined, ownerId)).rejects.toThrow("cannot be re-decided");
 
     // Cleanup.
     await prisma.experiment.delete({ where: { id: experiment!.id } });
   });
 
   it("an opportunity without a research run is not handoff-eligible", async () => {
+    const ownerId = await makeTestUser();
     const oppId = `test-opp-${uniqueSuffix()}`;
     createdOpportunityIds.push(oppId);
-    await prisma.opportunity.create({ data: makeOpportunityData(oppId) });
+    await prisma.opportunity.create({ data: { ...makeOpportunityData(oppId), ownerId } });
 
     const { createHandoff } = await import("./handoff-service");
-    const result = await createHandoff({ opportunityId: oppId });
+    const result = await createHandoff({ opportunityId: oppId, ownerId });
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.reasons).toContain("NO_RESEARCH_RUN");

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { isDbUnavailableError } from "./db";
 import { logger } from "./server/logger";
+import { ForbiddenError, UnauthorizedError } from "./authz-errors";
 
 /**
  * Maps a thrown error to a client-safe response.
@@ -13,6 +14,20 @@ import { logger } from "./server/logger";
 export function apiError(error: unknown, fallback = "Request failed") {
   if (isDbUnavailableError(error)) {
     return NextResponse.json({ error: "DATABASE_URL is not configured" }, { status: 503 });
+  }
+
+  // Authorization errors are deliberately terse: 401 before authentication,
+  // 403 for insufficient permission. Cross-tenant misses surface as 404 (see
+  // requireOwnedResource) so they are indistinguishable from missing rows.
+  if (error instanceof UnauthorizedError) {
+    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+  }
+  if (error instanceof ForbiddenError) {
+    const notFound = error.message === "Resource not found";
+    return NextResponse.json(
+      { error: notFound ? "Not found" : "Not permitted" },
+      { status: notFound ? 404 : 403 },
+    );
   }
 
   if (error instanceof Error) {

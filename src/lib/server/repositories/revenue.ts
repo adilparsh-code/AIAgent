@@ -12,9 +12,9 @@ function netOf(item: Pick<RevenueEntry, "grossRevenue" | "fees" | "advertisingCo
 }
 
 export class PrismaRevenueRepository implements Repository<RevenueEntry> {
-  async getAll(): Promise<RevenueEntry[]> {
+  async getAll(ownerId?: string): Promise<RevenueEntry[]> {
     const rows = await getPrisma().revenueEntry.findMany({
-      where: { isSample: false },
+      where: ownerId ? { isSample: false, ownerId } : { isSample: false },
       orderBy: { date: "desc" },
     });
     return rows.map(mapRevenue);
@@ -36,9 +36,9 @@ export class PrismaRevenueRepository implements Repository<RevenueEntry> {
     return rows.map(mapRevenue);
   }
 
-  async getById(id: string): Promise<RevenueEntry | null> {
+  async getById(id: string, ownerId?: string): Promise<RevenueEntry | null> {
     const row = await getPrisma().revenueEntry.findFirst({
-      where: { id, isSample: false },
+      where: ownerId ? { id, isSample: false, ownerId } : { id, isSample: false },
     });
     return row ? mapRevenue(row) : null;
   }
@@ -51,7 +51,7 @@ export class PrismaRevenueRepository implements Repository<RevenueEntry> {
     return row?.isSample ?? false;
   }
 
-  async create(item: Omit<RevenueEntry, "id">): Promise<RevenueEntry> {
+  async create(item: Omit<RevenueEntry, "id"> & { ownerId?: string | null }): Promise<RevenueEntry> {
     const netRevenue = netOf(item);
     const row = await getPrisma().revenueEntry.create({
       data: {
@@ -67,6 +67,7 @@ export class PrismaRevenueRepository implements Repository<RevenueEntry> {
         currency: item.currency,
         referenceNote: item.referenceNote,
         isSample: false,
+        ownerId: item.ownerId ?? null,
       },
     });
     return mapRevenue(row);
@@ -106,6 +107,14 @@ export class PrismaRevenueRepository implements Repository<RevenueEntry> {
     if (!existing || existing.isSample) return false;
     await getPrisma().revenueEntry.delete({ where: { id } });
     return true;
+  }
+
+  /** Owner-scoped delete used by protected routes. */
+  async deleteForOwner(id: string, ownerId: string): Promise<boolean> {
+    const result = await getPrisma().revenueEntry.deleteMany({
+      where: { id, ownerId, isSample: false },
+    });
+    return result.count > 0;
   }
 
   async getTotalNetRevenue(): Promise<number> {

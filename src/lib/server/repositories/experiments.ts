@@ -35,9 +35,9 @@ const SELECT = {
 } as const;
 
 export class PrismaExperimentRepository implements Repository<Experiment> {
-  async getAll(): Promise<Experiment[]> {
+  async getAll(ownerId?: string): Promise<Experiment[]> {
     const rows = await getPrisma().experiment.findMany({
-      where: { isSample: false },
+      where: ownerId ? { isSample: false, opportunity: { ownerId } } : { isSample: false },
       orderBy: { updatedAt: "desc" },
     });
     return rows.map(mapExperiment);
@@ -51,9 +51,12 @@ export class PrismaExperimentRepository implements Repository<Experiment> {
     return rows.map(mapExperiment);
   }
 
-  async getById(id: string): Promise<Experiment | null> {
+  /** Owner-scoped through the owning Opportunity (Phase 6A ownership model). */
+  async getById(id: string, ownerId?: string): Promise<Experiment | null> {
     const row = await getPrisma().experiment.findFirst({
-      where: { id, isSample: false },
+      where: ownerId
+        ? { id, isSample: false, opportunity: { ownerId } }
+        : { id, isSample: false },
     });
     return row ? mapExperiment(row) : null;
   }
@@ -97,6 +100,27 @@ export class PrismaExperimentRepository implements Repository<Experiment> {
       },
     });
     return mapExperiment(row);
+  }
+
+  /** Owner-scoped update through the owning Opportunity. */
+  async updateForOwner(
+    id: string,
+    ownerId: string,
+    updates: Partial<Experiment>,
+  ): Promise<Experiment | null> {
+    const existing = await getPrisma().experiment.findFirst({
+      where: { id, isSample: false, opportunity: { ownerId } },
+    });
+    if (!existing) return null;
+    return this.update(id, updates);
+  }
+
+  /** Owner-scoped delete through the owning Opportunity. */
+  async deleteForOwner(id: string, ownerId: string): Promise<boolean> {
+    const result = await getPrisma().experiment.deleteMany({
+      where: { id, isSample: false, opportunity: { ownerId } },
+    });
+    return result.count > 0;
   }
 
   async update(id: string, updates: Partial<Experiment>): Promise<Experiment | null> {

@@ -21,12 +21,21 @@ const includeTree = {
  * half-saved run can never appear as a success.
  */
 export class PrismaResearchRepository {
-  async getById(id: string): Promise<ResearchRun | null> {
+  /** Owner-scoped through the owning Opportunity (Phase 6A ownership model). */
+  async getById(id: string, ownerId?: string): Promise<ResearchRun | null> {
     const row = await getPrisma().researchRun.findUnique({
       where: { id },
       include: includeTree,
     });
-    return row ? mapResearchRun(row) : null;
+    if (!row) return null;
+    if (ownerId) {
+      const owner = await getPrisma().opportunity.findUnique({
+        where: { id: row.opportunityId },
+        select: { ownerId: true },
+      });
+      if (owner?.ownerId !== ownerId) return null;
+    }
+    return mapResearchRun(row);
   }
 
   async getByOpportunityId(opportunityId: string, limit = 20): Promise<ResearchRun[]> {
