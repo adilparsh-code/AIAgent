@@ -9,6 +9,7 @@ import { experimentRepository, opportunityRepository } from "@/lib/repositories"
 import type { Experiment, Opportunity } from "@/lib/types";
 import { Badge, Card, CardHeader, Button, statusBadgeClass } from "@/components/ui";
 import { ExperimentMetrics } from "@/components/ExperimentMetrics";
+import { ClosedLoopPanel } from "@/components/ClosedLoopPanel";
 
 export default function ExperimentDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -159,6 +160,8 @@ export default function ExperimentDetailPage({ params }: { params: { id: string 
           </div>
         </Card>
       )}
+
+      {!isSample && <ClosedLoopPanel experimentId={experiment.id} />}
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
