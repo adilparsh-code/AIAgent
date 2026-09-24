@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { getPrisma } from "@/lib/db";
 import { getAIProvider } from "@/lib/ai-provider";
 import type { AgentTaskExecutionResult } from "@/lib/agent-task";
+import { classifyFailure } from "@/lib/failure-classification";
 
 const APPROVAL_REQUIRED_TYPES = new Set<string>();
 
@@ -137,7 +138,12 @@ export async function executeAgentTask(id: string, ownerId: string) {
     const completedAt = new Date();
     const durationMs = completedAt.getTime() - startedAt.getTime();
     const latest = await prisma.agentTask.findUnique({ where: { id } });
-    const retryable = latest && latest.attempt < latest.maxRetries;
+    const classification = classifyFailure(error);
+    const retryable = Boolean(
+      latest &&
+      classification.retryable &&
+      latest.attempt < latest.maxRetries,
+    );
     await prisma.$transaction(async (tx) => {
       await tx.agentTask.update({
         where: { id },

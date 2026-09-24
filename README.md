@@ -799,4 +799,50 @@ This layer determines what should happen next. It does not execute external acti
 - OAuth/SSO and email verification; password reset flow.
 - Distributed rate limiting (the in-memory boundary protects a single instance only) and
   account-recovery flows.
-- Cross-run evidence correlation and historical trend storage.
+## Phase 14 — Production Hardening + Observability
+
+Phase 14 adds deterministic internal health, safe operational events, failure
+classification, and recovery recommendations. These are read models and
+advisory decisions; they do not add a second source of truth.
+
+- **Health model**: `src/lib/system-health.ts` reports `HEALTHY`, `DEGRADED`,
+  `BLOCKED`, or `UNKNOWN` across persistence, authentication, research,
+  validation, readiness, decision, portfolio, experiments, handoff, execution,
+  agent runtime, and the integration registry. External provider health remains
+  `UNKNOWN` until a real health check runs; configuration alone is not health.
+- **Operational events**: `src/lib/operational-events.ts` defines typed events,
+  severities, safe messages, optional owner-scoped identifiers, and preserved
+  data classes. Credential, cookie, authorization, token, and connection-string
+  patterns are redacted before display.
+- **Failure and recovery**: `src/lib/failure-classification.ts` and
+  `src/lib/recovery-policy.ts` classify failures deterministically and return
+  only a recommended action. Timeouts and rate limits can recommend bounded
+  backoff; authentication, authorization, validation, and data-integrity errors
+  are not blindly retried. Approval and capability gates remain authoritative.
+- **Idempotency audit**: existing unique research evidence hashes, metric
+  period/source uniqueness, handoff task keys, integration execution request
+  keys, and `AgentExecution.idempotencyKey` protections were retained. The agent
+  runtime retry path now uses deterministic failure classification instead of
+  treating every failure as retryable.
+- **Security**: both new endpoints require authentication. Operations are
+  owner-scoped through existing opportunity/task/execution ownership and exclude
+  samples. Health responses contain component diagnostics only, not opportunity
+  names, research content, experiment payloads, task details, or secrets.
+- **Data class**: `REAL_DATA`, `ESTIMATED_DATA`, `SAMPLE_DATA`, and `UNKNOWN`
+  remain distinct. Health and operations never upgrade non-real data into
+  real-world validation.
+- **APIs**: `GET /api/system/health` and `GET /api/system/operations`. Both are
+  bounded, read-only, and make no external API calls.
+- **UI**: `SystemHealthPanel` and `OperationalStatusPanel` are shown on the
+  existing `/agents` control page and link to existing surfaces.
+- **Bounds**: health uses a single owner-scoped persistence probe; operations
+  uses batched counts plus the existing bounded decision loader, capped at 50
+  opportunities, 200 research runs, 100 experiments, 60 metrics per experiment,
+  and 200 tasks/executions. No N+1 or portfolio recalculation is introduced.
+
+Known limitations: health is a lightweight internal snapshot rather than a
+provider probe, operational event records remain emitted through existing logs
+rather than a new persistence table, and no uptime, fake percentage, or invented
+measurement is reported.
+
+This phase provides observability and recovery decisions. It does not execute external actions automatically.

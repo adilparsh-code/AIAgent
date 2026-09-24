@@ -1,0 +1,19 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import { Badge, Card, CardHeader } from "@/components/ui";
+
+type HealthResponse = { status: string; checks: Array<{ component: string; status: string; message: string; dataClass: string }>; criticalFailures: string[]; warnings: string[]; degradedComponents: string[]; healthyComponents: string[]; generatedAt: string };
+
+const LABELS: Record<string, string> = { DATABASE: "Database", AUTHENTICATION: "Authentication", RESEARCH: "Research", EVIDENCE_VALIDATION: "Validation", READINESS: "Readiness", DECISION_ENGINE: "Decision engine", PORTFOLIO_INTELLIGENCE: "Portfolio intelligence", EXPERIMENT_METRICS: "Experiments", HANDOFF: "Handoff", EXECUTION: "Execution", AGENT_RUNTIME: "Agent runtime", INTEGRATION_REGISTRY: "Integrations" };
+
+function statusClass(status: string): string { return status === "HEALTHY" ? "bg-emerald-100 text-emerald-800" : status === "BLOCKED" ? "bg-red-100 text-red-800" : status === "DEGRADED" ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-700"; }
+
+export function SystemHealthPanel() {
+  const [data, setData] = useState<HealthResponse | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  useEffect(() => { let active = true; fetch("/api/system/health").then(async (r) => { if (!r.ok) throw new Error("unavailable"); return r.json() as Promise<HealthResponse>; }).then((value) => { if (active) setData(value); }).catch(() => { if (active) setUnavailable(true); }); return () => { active = false; }; }, []);
+  if (unavailable) return <Card><CardHeader title="SYSTEM HEALTH" subtitle="Health status is unavailable." /></Card>;
+  if (!data) return null;
+  return <Card><CardHeader title="SYSTEM HEALTH" subtitle="Authenticated, bounded internal health snapshot. Provider health is not inferred from configuration." action={<Badge className={statusClass(data.status)}>{data.status}</Badge>} /><div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-3">{data.checks.map((check) => <div key={check.component} className="rounded-md border p-3"><div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold">{LABELS[check.component] ?? check.component}</span><Badge className={statusClass(check.status)}>{check.status}</Badge></div><p className="mt-1 text-xs text-slate-500">{check.message}</p></div>)}</div><div className="grid gap-4 border-t border-slate-100 p-5 lg:grid-cols-3"><div><h4 className="text-xs font-semibold uppercase text-slate-500">WARNINGS</h4><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{data.warnings.length ? data.warnings.map((item) => <li key={item}>{item}</li>) : <li>None reported.</li>}</ul></div><div><h4 className="text-xs font-semibold uppercase text-slate-500">CRITICAL ISSUES</h4><ul className="mt-2 list-disc space-y-1 pl-5 text-sm">{data.criticalFailures.length ? data.criticalFailures.map((item) => <li key={item}>{item}</li>) : <li>None reported.</li>}</ul></div><div><h4 className="text-xs font-semibold uppercase text-slate-500">RECOVERY ACTIONS</h4><p className="mt-2 text-sm text-slate-600">Use the operational event and recovery policy. This panel does not execute recovery.</p></div></div></Card>;
+}
