@@ -8,6 +8,45 @@ export function Badge({ className, children }: { className?: string; children: R
   );
 }
 
+/**
+ * Phase 9 — data-class label. Real measurements, model output, explicit
+ * estimates and sample/dry-run rows are always visually distinct so a real
+ * number can never be mistaken for a generated or simulated one.
+ */
+export function dataClassBadgeClass(dataClass: string | null | undefined): string {
+  switch (dataClass) {
+    case "REAL_DATA":
+    case "REAL_LIVE_DATA":
+      return "bg-emerald-50 text-emerald-700 border-emerald-200";
+    case "AI_GENERATED":
+      return "bg-violet-50 text-violet-700 border-violet-200";
+    case "AI_ESTIMATE":
+    case "ESTIMATED_DATA":
+      return "bg-amber-50 text-amber-700 border-amber-200";
+    case "SAMPLE_DATA":
+      return "bg-slate-100 text-slate-600 border-slate-200";
+    default:
+      return "bg-slate-50 text-slate-500 border-slate-200";
+  }
+}
+
+export function dataClassLabel(dataClass: string | null | undefined): string {
+  switch (dataClass) {
+    case "REAL_DATA":
+    case "REAL_LIVE_DATA":
+      return "REAL DATA";
+    case "AI_GENERATED":
+      return "AI GENERATED";
+    case "AI_ESTIMATE":
+    case "ESTIMATED_DATA":
+      return "ESTIMATED DATA";
+    case "SAMPLE_DATA":
+      return "SAMPLE / DRY RUN";
+    default:
+      return "—";
+  }
+}
+
 export function statusBadgeClass(status: string): string {
   switch (status) {
     case "VALIDATED":

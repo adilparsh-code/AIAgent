@@ -512,6 +512,68 @@ same gates, state machine, idempotency and audit run identically once real provi
   handling (including `UNAVAILABLE` not being re-run), bounded retry, dry-run honesty, approval
   gates creating no execution rows, owner scoping, and secret-free persistence.
 
+## Phase 9 — Live execution + AI Income Lab execution bridge
+
+Phase 9 turns the integration framework into **one real, safe, measurable
+execution path** end to end. It is provider-agnostic and works today without
+credentials; the moment a provider is configured the same path runs it live.
+
+**Vertical slice**
+
+```
+Integrations UI → Run test execution (fixed deterministic objective)
+  → AgentTask (budget 0, 1 attempt, 1 action, 60s)
+  → allowlisted action → capability/approval gates
+  → real provider API call
+  → AgentExecution (Phase 9A state machine + unique idempotency key)
+  → IntegrationExecution audit row (Phase 8)
+  → AgentArtifact (data-class labelled)
+  → ExperimentMetric ONLY when the provider returned real measurements
+  → evaluation + learning feedback → optional manual rerank
+```
+
+**What was added**
+
+- `src/lib/integrations/test-execution.ts` — the pure catalog: which allowlisted
+  actions a provider exposes (`resolveTestActions`), the fixed deterministic
+  objective for each action, strict limits, and request-id validation.
+  Approval-class (`PUBLISH / SEND_MESSAGE / CREATE_CAMPAIGN / SPEND_MONEY`) and
+  irreversible (`UPLOAD`) capabilities are **never** testable.
+- `src/lib/server/test-execution-service.ts` — one safe, bounded, owner-scoped
+  provider call per request, run through the Phase 9A orchestrator so the whole
+  audit trail exists. Duplicate `requestId`s resolve to the same execution.
+- `POST /api/integrations/:id/test-execution` and `GET` (the safe action
+  catalog). `POST /api/handoffs/:id/execute` — the AI Income Lab bridge from an
+  accepted handoff to a safe execution plus truthful evaluation.
+- Orchestrator extensions: explicit (still allowlisted) action selection,
+  search-shaped payloads for `SEARCH_*` actions, and artifact creation on
+  success with the provider's own data class.
+- Control center: "Run test execution" on every live provider, a safe-action
+  picker, result panel (status, data class, latency, sanitized error, execution
+  id, artifact id), and REAL DATA / AI GENERATED / ESTIMATED DATA / SAMPLE-DRY
+  RUN labels in the execution history.
+- Tests: 21 new (catalog safety, missing key, 401, 429, 5xx, timeout, malformed
+  response, duplicate suppression, cross-tenant blocking, prompt-injection
+  boundary, secret non-disclosure) with the provider transport stubbed — no
+  test ever contacts a real provider.
+
+**Current live status (honest)**
+
+No provider has credentials in this environment, so no real execution has
+succeeded yet and Phase 9 is **not** declared complete. Real health checks at
+the time of writing:
+
+| Provider | Configured | Health check |
+| --- | --- | --- |
+| `sambanova` | no — missing `SAMBANOVA_API_KEY` | `NOT_CONFIGURED` |
+| `brave-search` | no — missing `BRAVE_SEARCH_API_KEY` | `NOT_CONFIGURED` |
+| `google-trends` | no — missing `SERPAPI_API_KEY` | `NOT_CONFIGURED` |
+| `reddit` | yes (no key needed) | `AUTH_FAILED` — public endpoint returns HTTP 403 to this host's IP |
+| scaffolds | no | `NOT_CONFIGURED` (never `HEALTHY`, never a fake success) |
+
+See `docs/integrations.md` (operations) and `docs/environment.md` (every
+server-side variable).
+
 ## Intentionally deferred
 
 - Real external API executions against paid/social providers (scaffold adapters stay honestly
