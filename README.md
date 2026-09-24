@@ -735,7 +735,62 @@ Individual Opportunity → Readiness → Decision
   live providers plug into the research cycle's `COLLECT` stage without changing the portfolio,
   decision, or prioritization architecture.
 
-## Intentionally deferred
+## Phase 13 — Autonomous Operating Loop
+
+The operating loop composes the existing portfolio intelligence, opportunity
+ decisions, readiness, experiment prioritization, lifecycle, handoff, and
+execution-gate read-models into one deterministic operating-cycle plan.
+
+```text
+Portfolio
+↓
+Selection
+↓
+Decision
+↓
+Next Action
+↓
+Research / Validation / Experiment
+↓
+Learning
+↓
+Handoff
+↓
+Execution Eligibility
+↓
+Measurement
+↓
+Reassessment
+↓
+Portfolio
+```
+
+The loop selects one opportunity for the next operational action using the
+existing deterministic operational recommendation. It does not use a financial
+ranking, profitability prediction, or invented measurement. Persisted
+`Opportunity.status` remains authoritative; no second persisted state machine is
+introduced. `SAMPLE_DATA` and `ESTIMATED_DATA` remain excluded from REAL_DATA
+eligibility, and reassessment uses only existing experiment metrics and
+learning decisions.
+
+Safety gates are reported, not bypassed: authenticated owner context,
+opportunity ownership, decision state, readiness, handoff acceptance, task
+approval, execution permissions, required capability, and data-class
+requirements must all pass before `executionEligible` can be true. The existing
+approval and capability enforcement remains authoritative.
+
+- **Core planner**: `src/lib/autonomous-operating-loop.ts` (pure, deterministic)
+- **Service**: `src/lib/server/autonomous-operating-loop-service.ts` (owner-scoped, bounded)
+- **API**: `GET /api/opportunities/operating-loop` (authentication required)
+- **UI**: `src/components/AutonomousOperatingLoopPanel.tsx` on `/opportunities`
+- **Bounds**: the shared decision loader reads at most 50 opportunities, 200
+  research runs, 100 experiments, 60 metrics per experiment, and 200 tasks using
+  a constant number of batched queries. There is no N+1 loading.
+- **Orchestration only**: this layer determines what should happen next. It does
+  not execute external actions.
+
+This layer determines what should happen next. It does not execute external actions.
+
 
 - Real external API executions against paid/social providers (scaffold adapters stay honestly
   inert; the Phase 9A orchestrator runs them the moment real adapters exist).

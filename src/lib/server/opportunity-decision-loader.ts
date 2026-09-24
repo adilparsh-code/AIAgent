@@ -169,7 +169,13 @@ export async function loadOpportunityDecisions(
       where: { opportunityId: { in: ids }, ownerId },
       orderBy: { createdAt: "desc" },
       take: DECISION_LOAD_BOUNDS.MAX_TASKS_TOTAL,
-      select: { opportunityId: true, status: true },
+      select: {
+        opportunityId: true,
+        status: true,
+        taskType: true,
+        requiresApproval: true,
+        approvalState: true,
+      },
     }),
   ]);
 
@@ -186,13 +192,23 @@ export async function loadOpportunityDecisions(
     list.push(experiment);
     experimentsByOpportunity.set(experiment.opportunityId, list);
   }
-  const tasksByOpportunity = new Map<string, Array<{ status: string }>>();
+  const tasksByOpportunity = new Map<string, Array<{
+    status: string;
+    taskType: string;
+    requiresApproval: boolean;
+    approvalState: string | null;
+  }>>();
   for (const task of tasks) {
     // AgentTask.opportunityId is nullable: a task not linked to an opportunity
     // is not part of that opportunity's execution state.
     if (!task.opportunityId) continue;
     const list = tasksByOpportunity.get(task.opportunityId) ?? [];
-    list.push({ status: task.status });
+    list.push({
+      status: task.status,
+      taskType: task.taskType,
+      requiresApproval: task.requiresApproval,
+      approvalState: task.approvalState,
+    });
     tasksByOpportunity.set(task.opportunityId, list);
   }
 
@@ -251,6 +267,12 @@ export async function loadOpportunityDecisions(
     const hasAwaitingApprovalTask = opportunityTasks.some((task) => task.status === "WAITING_APPROVAL");
     const hasBlockedTask = opportunityTasks.some((task) => task.status === "BLOCKED");
     const hasCompletedExecution = opportunityTasks.some((task) => task.status === "COMPLETED");
+    const hasApprovedTask = opportunityTasks.some(
+      (task) => task.requiresApproval && task.approvalState === "APPROVED",
+    );
+    const hasPendingCapabilityTask = opportunityTasks.some(
+      (task) => task.status === "READY" || task.status === "QUEUED",
+    );
 
     const decision = calculateOpportunityDecision({
       opportunity: {
@@ -329,6 +351,7 @@ export async function loadOpportunityDecisions(
       hasExecutionBlocker: hasBlockedTask,
       isBlocked,
       latestResearchRunStatus: opportunityRuns[0]?.status ?? null,
+      taskApprovalPending: hasAwaitingApprovalTask,
     };
 
     entries.push({ opportunityId: opportunity.id, decision, portfolioInput });
