@@ -35,6 +35,8 @@ export interface ProviderActivationInput {
   healthStatus?: string | null;
   healthCheckedAt?: string | null;
   healthError?: string | null;
+  healthLatencyMs?: number | null;
+  healthDataClass?: string | null;
   isScaffold?: boolean;
 }
 
@@ -50,6 +52,8 @@ export interface ProviderActivation {
   approvalRequired: boolean;
   safeReason: string;
   lastHealthCheckAt: string | null;
+  lastHealthLatencyMs?: number | null;
+  lastHealthDataClass?: string;
 }
 
 function isCreditFailure(value: string | null | undefined): boolean {
@@ -124,6 +128,10 @@ export function deriveProviderActivation(input: ProviderActivationInput): Provid
     approvalRequired: capabilities.some(capabilityRequiresApproval),
     safeReason: safeReason(input, status),
     lastHealthCheckAt: input.healthCheckedAt ?? null,
+    lastHealthLatencyMs: Number.isFinite(input.healthLatencyMs) && Number(input.healthLatencyMs) >= 0
+      ? Math.round(Number(input.healthLatencyMs))
+      : null,
+    lastHealthDataClass: input.healthDataClass ?? "UNKNOWN",
   };
 }
 

@@ -131,7 +131,7 @@ describe.skipIf(!hasDb)("Phase 8 integrations (real PostgreSQL)", () => {
       makeParams("sambanova"),
     ) as Response;
     expect(response.status).toBe(200);
-    const body = JSON.parse(await response.text()) as { integration: { status: string; lastCheckedAt: string | null } };
+    const body = JSON.parse(await response.text()) as { integration: { status: string; lastCheckedAt: string | null; latencyMs: number | null; healthDataClass: string } };
     if (!process.env.SAMBANOVA_API_KEY) {
       expect(body.integration.status).toBe("NOT_CONFIGURED");
       expect(body.integration.lastCheckedAt).toBeTruthy();
@@ -139,6 +139,9 @@ describe.skipIf(!hasDb)("Phase 8 integrations (real PostgreSQL)", () => {
     const persisted = await prisma.integrationHealth.findUnique({ where: { adapterName: "sambanova" } });
     expect(persisted).toBeTruthy();
     expect(persisted!.adapterName).toBe("sambanova");
+    expect(persisted!.latencyMs).toBeGreaterThanOrEqual(0);
+    expect(persisted!.dataClass).toBe("UNKNOWN");
+    expect(body.integration.healthDataClass).toBe("UNKNOWN");
   });
 
   it("health check on an unknown adapter 404s without side effects", async () => {

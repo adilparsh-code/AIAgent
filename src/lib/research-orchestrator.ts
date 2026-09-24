@@ -2,6 +2,7 @@ import { getResearchProviders, isProviderNotConfigured } from "./research-provid
 import { dedupeEvidence, normalizeEvidenceItem } from "./evidence-normalization";
 import { buildConclusion, buildScoreIntegration, buildValidationSignals, countContradictions } from "./validation";
 import type { ResearchProvider } from "./base-provider";
+import { sanitizeOperationalMessage } from "./operational-events";
 import type {
   Evidence,
   ProviderRunStatus,
@@ -140,7 +141,7 @@ export async function runResearch(
         providerStatuses.push({ name: provider.name, status: "EMPTY", evidenceCount: 0, error: null });
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "unknown provider error";
+      const message = sanitizeOperationalMessage(error instanceof Error ? error.message : "unknown provider error");
       errors.push(`${provider.name}: ${message}`);
       providerStatuses.push({
         name: provider.name,

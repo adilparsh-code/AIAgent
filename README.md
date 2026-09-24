@@ -886,6 +886,50 @@ executed automatically.
 This phase prepares live provider activation. It does not execute external
 actions automatically.
 
+## Phase 17 — Controlled Live Provider Activation + First Research/Evidence Loop
+
+Phase 17 adds a controlled activation boundary around the existing integration,
+execution, research, evidence, and decision contracts. It does not add a
+provider, paid service, dependency, credential, or fake response. The only
+schema change is the additive Phase 17 IntegrationHealth latency/data-class
+metadata required to persist the real-check contract.
+
+- **Controlled activation:** `src/lib/integrations/live-activation-controller.ts`
+  verifies configuration, real health, capability, approval, and execution
+  safety before one allowlisted live test. Server wiring reuses the existing
+  `IntegrationHealth`, AgentTask, AgentExecution, and IntegrationExecution path.
+- **Provider normalization:** `live-provider-normalization.ts` returns only safe
+  metadata and maps auth, credit, rate-limit, timeout, unavailable, malformed,
+  empty, validation, and success outcomes without raw headers or credentials.
+- **First research cycle:** `POST /api/research/live-cycle` is owner-scoped and
+  health-gates the existing Brave/Reddit/Google Trends research adapters before
+  invoking the existing `runResearch` and transactional research repository.
+  The existing decision pipeline is recomputed afterward; no second research
+  system is introduced.
+- **REAL_DATA integrity:** provider health, source/provider, operation, source
+  URL, observation timestamp, research-run relationship, and evidence identity
+  are required. Missing provenance downgrades a live-data claim. Sample,
+  estimated, AI-generated, and unknown data are never upgraded to REAL_DATA.
+- **Safety:** only allowlisted read/search/draft operations are live-testable.
+  `PUBLISH`, `SEND_MESSAGE`, `CREATE_CAMPAIGN`, `SPEND_MONEY`, and upload remain
+  approval-gated; write-side tests return `LIVE_WRITE_TEST_REQUIRES_APPROVAL`.
+  Credit/billing failures are non-retryable and never spend automatically.
+- **Idempotency and audit:** safe live tests reuse the existing execution
+  idempotency key and bounded request id. The live research run uses a stable
+  request-derived primary key so a repeated request does not create a second
+  ResearchRun. Operational events use the Phase 14 model and sanitized logging.
+- **UI:** `/integrations` exposes controlled activation and safe live-test
+  actions. Owned opportunity research uses the controlled live-cycle route;
+  sample opportunities retain the explicitly labeled demo path.
+- **Documentation:** `docs/environment.md` and `docs/integrations.md` contain the
+  credential, activation, provenance, rollback, and stop-condition rules.
+
+This phase makes the existing system capable of a controlled first live cycle.
+It does not claim the system is live, fabricate provider health or evidence, or
+execute dangerous external actions automatically. If provider credentials are
+not configured, activation remains `NOT_CONFIGURED` /
+`READY_FOR_HEALTH_CHECK` and no real provider call is performed.
+
 ## Phase 16 — Pre-Live Launch Gate
 
 Phase 16 adds an API-independent pre-live launch gate and end-to-end readiness

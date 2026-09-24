@@ -671,6 +671,8 @@ model IntegrationHealth {
   lastCheckedAt DateTime
   capabilities  String[] @default([])
   environment   String   @default("UNKNOWN")
+  latencyMs     Int?
+  dataClass     String   @default("UNKNOWN")
   updatedAt     DateTime @updatedAt
 
   @@index([status])

@@ -64,4 +64,12 @@ export const logger = {
   integrationApprovalRequired(adapterName: string, action: string, capability: string, ownerId: string) {
     emit("warn", "integration.approval_required", { adapterName, action, capability, ownerId });
   },
+  operationalEvent(event: { event: string; safeMessage: string; severity: string; executionId?: string; dataClass?: string }) {
+    const level: LogLevel = event.severity === "CRITICAL" ? "error" : event.severity === "ERROR" || event.severity === "WARNING" ? "warn" : "info";
+    emit(level, `operational.${event.event.toLowerCase()}`, {
+      message: event.safeMessage,
+      executionId: event.executionId ?? null,
+      dataClass: event.dataClass ?? "UNKNOWN",
+    });
+  },
 };

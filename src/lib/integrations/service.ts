@@ -24,6 +24,8 @@ export interface IntegrationSummary {
   missingEnvVars: string[];
   lastCheckedAt: string | null;
   lastError: string | null;
+  latencyMs: number | null;
+  healthDataClass: string;
   isScaffold: boolean;
 }
 
@@ -51,7 +53,7 @@ function statusFromHealth(
 export async function listIntegrationSummaries(): Promise<IntegrationSummary[]> {
   const adapters = getIntegrationRegistry().list();
   const prisma = getPrisma();
-  let healthRows: Array<{ adapterName: string; status: string; lastCheckedAt: Date | null; lastError: string | null }> = [];
+  let healthRows: Array<{ adapterName: string; status: string; lastCheckedAt: Date | null; lastError: string | null; latencyMs: number | null; dataClass: string }> = [];
   try {
     // The built-in registry is bounded; cap the persisted lookup as a defensive
     // boundary for future registry growth and owner-independent health pages.
@@ -78,6 +80,8 @@ export async function listIntegrationSummaries(): Promise<IntegrationSummary[]> 
       missingEnvVars: adapter.requiredEnvVars.filter((name) => !config.presentEnvVars.includes(name)),
       lastCheckedAt: health?.lastCheckedAt ? health.lastCheckedAt.toISOString() : null,
       lastError: health?.lastError ?? null,
+      latencyMs: health?.latencyMs ?? null,
+      healthDataClass: health?.dataClass ?? "UNKNOWN",
       isScaffold: SCAFFOLD_NAMES.has(adapter.name),
     };
   });
@@ -108,6 +112,8 @@ export async function runHealthCheck(name: string): Promise<IntegrationSummary |
         lastCheckedAt: new Date(health.checkedAt),
         capabilities: health.capabilities,
         environment: health.environment,
+        latencyMs: health.durationMs,
+        dataClass: "UNKNOWN",
       },
       update: {
         status: health.status,
@@ -115,6 +121,8 @@ export async function runHealthCheck(name: string): Promise<IntegrationSummary |
         lastCheckedAt: new Date(health.checkedAt),
         capabilities: health.capabilities,
         environment: health.environment,
+        latencyMs: health.durationMs,
+        dataClass: "UNKNOWN",
       },
     });
   } catch (error) {

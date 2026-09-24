@@ -33,6 +33,8 @@ export async function getProviderActivations(): Promise<ProviderActivation[]> {
         healthStatus: summary.status,
         healthCheckedAt: summary.lastCheckedAt,
         healthError: summary.lastError,
+        healthLatencyMs: summary.latencyMs,
+        healthDataClass: summary.healthDataClass,
         isScaffold: summary.isScaffold || checklist?.isScaffold === true,
       };
     });
@@ -52,6 +54,8 @@ export async function getProviderActivations(): Promise<ProviderActivation[]> {
       healthStatus: null,
       healthCheckedAt: null,
       healthError: null,
+      healthLatencyMs: null,
+      healthDataClass: "UNKNOWN",
       isScaffold: false,
     });
   }

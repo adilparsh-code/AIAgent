@@ -68,6 +68,10 @@ export class PrismaResearchRepository {
     const prisma = getPrisma();
     try {
       const saved = await prisma.$transaction(async (tx) => {
+        // A live activation request may resolve to an existing run id. Count
+        // opportunity research runs only when the row is first created; an
+        // idempotent replay must not inflate lifecycle metadata.
+        const existingRun = await tx.researchRun.findUnique({ where: { id: run.id }, select: { id: true } });
         await tx.researchRun.upsert({
           where: { id: run.id },
           create: {
@@ -211,7 +215,7 @@ export class PrismaResearchRepository {
             lastResearchRunId: run.id,
             lastResearchAt: new Date(run.completedAt ?? run.startedAt),
             lastResearchConclusion: run.conclusion,
-            researchRunCount: { increment: 1 },
+            researchRunCount: existingRun ? undefined : { increment: 1 },
           },
         });
 
