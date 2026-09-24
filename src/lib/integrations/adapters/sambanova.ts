@@ -24,10 +24,40 @@ import {
  *   that a known price can be applied to. Unknown → null, never invented.
  */
 const SAMBANOVA_BASE_URL = "https://api.sambanova.ai/v1/chat/completions";
-const DEFAULT_MODEL = "Meta-Llama-3.1-8B-Instruct";
+/**
+ * Default model id. SambaNova rotates its catalogue, so a stale hardcoded id
+ * is a real failure mode (the API answers 410/404 for retired models). This
+ * default is a currently-served catalogue model; override with
+ * SAMBANOVA_MODEL. When the default is stale the provider answers clearly and
+ * the health check reports it honestly instead of pretending to be healthy.
+ */
+const DEFAULT_MODEL = "Meta-Llama-3.3-70B-Instruct";
 
 export const SAMBANOVA_ENV_VARS = ["SAMBANOVA_API_KEY"] as const;
 export const SAMBANOVA_OPTIONAL_ENV_VARS = ["SAMBANOVA_BASE_URL", "SAMBANOVA_MODEL", "AI_PROVIDER_ENV"] as const;
+
+/**
+ * Classify a failed health probe into an operator-actionable (still secret-free)
+ * message. Never includes response bodies that could echo a credential.
+ */
+export function describeProbeFailure(status: number, model: string): string {
+  if (status === 402) {
+    return "sambanova health probe HTTP 402: key authenticated but the account has no credits/subscription (billing required)";
+  }
+  if (status === 404) {
+    return `sambanova health probe HTTP 404: model "${model}" is not available to this account (set SAMBANOVA_MODEL to a model from your catalogue)`;
+  }
+  if (status === 410) {
+    return `sambanova health probe HTTP 410: model "${model}" has been retired (set SAMBANOVA_MODEL to a current catalogue model)`;
+  }
+  if (status === 429) {
+    return "sambanova health probe HTTP 429: rate limited";
+  }
+  if (status === 401 || status === 403) {
+    return `sambanova health probe HTTP ${status}: credentials rejected`;
+  }
+  return `sambanova health probe HTTP ${status}`;
+}
 
 const CAPABILITIES: readonly IntegrationCapability[] = ["READ_DATA", "CREATE_DRAFT"];
 
@@ -107,7 +137,10 @@ export function createSambaNovaAdapter(): IntegrationAdapter {
           status,
           checkedAt: new Date().toISOString(),
           durationMs: Date.now() - startedAt,
-          error: response.ok ? null : sanitizeErrorMessage(`sambanova health probe HTTP ${response.status}`),
+          // Actionable, sanitized probe failures. 402 = the key authenticated
+          // but the account has no credits/subscription (billing, not auth);
+          // 404/410 = the model id is retired or unavailable.
+          error: response.ok ? null : sanitizeErrorMessage(describeProbeFailure(response.status, process.env.SAMBANOVA_MODEL ?? DEFAULT_MODEL)),
         };
       } catch (error) {
         return {
@@ -203,7 +236,9 @@ export function createSambaNovaAdapter(): IntegrationAdapter {
             output: null,
             rawDataAvailable: false,
             dataClass: "AI_GENERATED",
-            error: sanitizeErrorMessage(`sambanova HTTP ${response.status}`),
+            error: sanitizeErrorMessage(
+              describeProbeFailure(response.status, process.env.SAMBANOVA_MODEL ?? DEFAULT_MODEL).replace("health probe", "execution"),
+            ),
             usage: null,
             estimatedCost: null,
           });
