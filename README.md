@@ -469,9 +469,53 @@ auditable adapters — incrementally, and without pretending any connection exis
 `AI_PROVIDER_ENV` / `RESEARCH_PROVIDER_ENV` label the provider environment as TEST or LIVE so test
 configuration is always distinguishable from production.
 
+## Phase 9A — API-independent live execution foundation
+
+A provider-independent execution orchestration layer sits between the Phase 7 AgentTask runtime and
+the Phase 8 integration adapters. External API credentials are NOT required for any of it — the
+same gates, state machine, idempotency and audit run identically once real providers are plugged in.
+
+- **Execution contract** (`src/lib/execution-contract.ts`, `EXECUTION_CONTRACT_VERSION = 1`):
+  statuses `QUEUED / RUNNING / SUCCEEDED / FAILED / TIMEOUT / RATE_LIMITED / AUTH_FAILED /
+  UNAVAILABLE / BLOCKED / CANCELLED` (`SUCCEEDED` never marks an execution that did not actually
+  run); a deterministic state machine (only `FAILED/TIMEOUT/RATE_LIMITED → RUNNING` may go back —
+  terminal states have no outgoing edges); bounded retry policy (`maxAttempts` clamped 1–5, only
+  `SERVER/NETWORK/RATE_LIMIT` error classes are retryable, and `PUBLISH / SEND_MESSAGE /
+  CREATE_CAMPAIGN / SPEND_MONEY / UPLOAD` capabilities are NEVER auto-retried); and DRY_RUN
+  labeling (`dataClass = SAMPLE_DATA`, never `REAL_DATA`).
+- **Persistence** (`20260923200000_phase9a_agent_executions`, purely additive): the `AgentExecution`
+  table records task, owner (denormalized opportunity/experiment ids for audit), integration,
+  action, capability, approval status, mode (`LIVE`/`DRY_RUN`), status, `retryCount`/`maxAttempts`,
+  timing, sanitized result and error, and the recorded `dataClass`. `idempotencyKey` is UNIQUE —
+  duplicate requests resolve to the existing row (including concurrent duplicates, which surface as
+  `P2002` and are absorbed) instead of creating duplicate executions.
+- **Orchestrator** (`src/lib/server/execution-orchestrator.ts`): the only writer of execution
+  rows. Pipeline: AgentTask → ownership → status gate → Phase 8 permission decision → approval
+  gate → integration resolution/config → execution → result → persistence → Phase 8 audit row →
+  metrics ingestion. Actions come only from the Phase 8 allowlist (`TASK_TYPE_ACTIONS`) — never
+  from task inputs; external content in inputs is wrapped as untrusted data before it can reach a
+  prompt. Approval-requiring capabilities set the task to `WAITING_APPROVAL` and create no
+  execution row. Adapters resolve through the existing registry (dependency injection: a real
+  provider plugs in without orchestrator changes).
+- **DRY_RUN / simulation mode**: `POST` with `{ "mode": "DRY_RUN" }` runs every gate (auth,
+  ownership, task status, permission, approval, integration resolution) and reports what a LIVE
+  execution would do — but never calls a provider. Rows are `mode=DRY_RUN`, `dryRun=true`,
+  `dataClass=SAMPLE_DATA`; the UI/API wording is always "simulation only, no real execution".
+- **Honest unavailability**: with no credentials configured, a LIVE execution of a Brave task ends
+  `UNAVAILABLE` with a classified, sanitized error on the row — never a fabricated success.
+- **APIs** (authenticated, owner-scoped, 404-masked like Phase 6A): `POST
+  /api/agent-tasks/:id/executions` (body `{"mode":"LIVE"|"DRY_RUN"}`, default LIVE) and `GET
+  /api/agent-tasks/:id/executions` (task execution history, optional `status` filter). Task-level
+  completion/failure is mirrored onto the AgentTask row as before.
+- **Tests**: pure state-machine/retry/idempotency unit tests plus real-PostgreSQL integration
+  tests covering concurrent duplicate idempotency, illegal-transition rejection, terminal-state
+  handling (including `UNAVAILABLE` not being re-run), bounded retry, dry-run honesty, approval
+  gates creating no execution rows, owner scoping, and secret-free persistence.
+
 ## Intentionally deferred
 
-- Autonomous agent execution (AgentRun rows exist for audit; no agent logic runs yet).
+- Real external API executions against paid/social providers (scaffold adapters stay honestly
+  inert; the Phase 9A orchestrator runs them the moment real adapters exist).
 - Executing AI Income Lab implementation / revenue actions after handoff.
 - Automatic application of suggested scores (still a human-confirmed suggestion).
 - OAuth/SSO and email verification; password reset flow.

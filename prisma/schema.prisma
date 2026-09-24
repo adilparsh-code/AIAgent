@@ -164,6 +164,25 @@ enum AgentTaskStatus {
   BLOCKED
 }
 
+/// Phase 9A — lifecycle of one AgentExecution (provider-independent execution
+/// of an allowlisted AgentTask action). QUEUED/RUNNING/CANCELLED are lifecycle
+/// states; the remaining values mirror the Phase 8 outcome classes. FAILED,
+/// TIMEOUT and RATE_LIMITED may transition back to RUNNING for a bounded,
+/// capability-aware retry; AUTH_FAILED / UNAVAILABLE / BLOCKED / SUCCEEDED /
+/// CANCELLED are terminal.
+enum AgentExecutionStatus {
+  QUEUED
+  RUNNING
+  SUCCEEDED
+  FAILED
+  TIMEOUT
+  RATE_LIMITED
+  AUTH_FAILED
+  UNAVAILABLE
+  BLOCKED
+  CANCELLED
+}
+
 /// Phase 8 — execution outcome of one external adapter action. Audit rows
 /// carry sanitized errors and output summaries only — never secrets.
 enum IntegrationExecutionStatus {
@@ -254,6 +273,7 @@ model User {
   agentRuns             AgentRun[]
   agentTasks            AgentTask[]
   integrationExecutions IntegrationExecution[]
+  agentExecutions       AgentExecution[]
 
   @@index([status])
 }
@@ -612,6 +632,7 @@ model AgentTask {
   cancellation     String?
   artifacts        AgentArtifact[]
   agentRuns        AgentRun[]
+  executions       AgentExecution[]
   createdAt        DateTime        @default(now())
   updatedAt        DateTime        @updatedAt
 
@@ -677,6 +698,51 @@ model IntegrationExecution {
   @@index([ownerId, createdAt])
   @@index([taskId])
   @@index([status])
+}
+
+/// Phase 9A — provider-independent execution record for one allowlisted
+/// AgentTask action. One row per idempotency key: duplicate requests resolve
+/// to the existing row instead of creating duplicates (unique constraint).
+/// Retries are recorded on the SAME row via state transitions
+/// (FAILED/TIMEOUT/RATE_LIMITED → RUNNING) with retryCount persisted.
+/// DRY_RUN rows are clearly labeled (mode DRY_RUN + dryRun + dataClass
+/// SAMPLE_DATA) and never represent a real external execution. Secrets are
+/// never stored: no env values, tokens, or API keys.
+model AgentExecution {
+  id             String               @id @default(cuid())
+  version        Int                  @default(1)
+  taskId         String
+  task           AgentTask            @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  ownerId        String
+  owner          User                 @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  // Denormalized from the task for audit (no FK — the task row is the source).
+  opportunityId  String?
+  experimentId   String?
+  integration    String
+  action         String
+  capability     String?
+  approvalStatus String               @default("NOT_REQUIRED")
+  idempotencyKey String               @unique
+  status         AgentExecutionStatus @default(QUEUED)
+  mode           String               @default("LIVE")
+  dryRun         Boolean              @default(false)
+  retryCount     Int                  @default(0)
+  maxAttempts    Int                  @default(1)
+  startedAt      DateTime?
+  completedAt    DateTime?
+  durationMs     Int?
+  result         Json?
+  error          String?
+  // Data class of the recorded output; NULL until a result exists. A DRY_RUN
+  // row is always SAMPLE_DATA and never REAL_DATA.
+  dataClass      String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  @@index([taskId])
+  @@index([ownerId])
+  @@index([status])
+  @@index([taskId, createdAt])
 }
 
 model ResearchRun {
