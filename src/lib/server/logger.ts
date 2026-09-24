@@ -1,4 +1,5 @@
 import "server-only";
+import { sanitizeOperationalMessage } from "@/lib/operational-events";
 
 /**
  * Structured server-side logging for important operations:
@@ -67,7 +68,7 @@ export const logger = {
   operationalEvent(event: { event: string; safeMessage: string; severity: string; executionId?: string; dataClass?: string }) {
     const level: LogLevel = event.severity === "CRITICAL" ? "error" : event.severity === "ERROR" || event.severity === "WARNING" ? "warn" : "info";
     emit(level, `operational.${event.event.toLowerCase()}`, {
-      message: event.safeMessage,
+      message: sanitizeOperationalMessage(event.safeMessage),
       executionId: event.executionId ?? null,
       dataClass: event.dataClass ?? "UNKNOWN",
     });

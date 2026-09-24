@@ -24,16 +24,16 @@ function safeId(value: string): string {
  * Sources of truth, in priority order:
  * 1. Recorded ExperimentMetric time-series rows (aggregated with strict
  *    missing-data semantics — sums of recorded values only).
- * 2. The legacy Experiment.metrics JSON snapshot when no metric records exist,
- *    so pre-6B experiments keep evaluating exactly as before.
+ * 2. Otherwise the result is explicitly NOT_MEASURED. Legacy JSON snapshots
+ *    have no traceable measurement provenance and cannot be upgraded to real.
  *
  * Decision rules are the unchanged, explicit Phase 5 rules. Feedback records
  * carry the data class of the underlying measurements.
  */
 interface TimeSeriesResolution {
   metrics: ExperimentMetrics;
-  source: "TIME_SERIES" | "LEGACY_JSON";
-  dataClass: "REAL_DATA" | "ESTIMATED_DATA" | "MIXED";
+  source: "TIME_SERIES" | "NOT_MEASURED";
+  dataClass: "REAL_DATA" | "ESTIMATED_DATA" | "MIXED" | "NOT_MEASURED";
   recordCount: number;
   estimatedRecordCount: number;
 }
@@ -42,7 +42,11 @@ async function resolveMetrics(experimentId: string, ownerId: string): Promise<Ti
   const rows = await metricRepository.listForOwner(experimentId, ownerId);
   if (rows === null) return null; // foreign/missing experiment
   if (rows.length > 0) {
-    const summary = summarizeMetricSeries(orderChronologically(rows));
+    const safeRows = rows.map((row) => ({
+      ...row,
+      dataClass: row.dataClass === "REAL_DATA" && row.source.trim() ? "REAL_DATA" as const : "ESTIMATED_DATA" as const,
+    }));
+    const summary = summarizeMetricSeries(orderChronologically(safeRows));
     return {
       metrics: toPhase5Metrics(summary),
       source: "TIME_SERIES",
@@ -53,8 +57,8 @@ async function resolveMetrics(experimentId: string, ownerId: string): Promise<Ti
   }
   return {
     metrics: {} as ExperimentMetrics,
-    source: "LEGACY_JSON",
-    dataClass: "REAL_DATA",
+    source: "NOT_MEASURED",
+    dataClass: "NOT_MEASURED",
     recordCount: 0,
     estimatedRecordCount: 0,
   };
@@ -68,14 +72,11 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     const resolved = await resolveMetrics(experiment.id, user.id);
     if (!resolved) return NextResponse.json({ error: "Experiment not found" }, { status: 404 });
 
-    const metrics: ExperimentMetrics =
-      resolved.source === "TIME_SERIES"
-        ? resolved.metrics
-        : ((experiment.metrics ?? {}) as ExperimentMetrics);
-    const hasTraffic = (experiment.visitors ?? 0) > 0 || (experiment.clicks ?? 0) > 0;
+    const metrics: ExperimentMetrics = resolved.source === "TIME_SERIES" ? resolved.metrics : {};
+    const hasTraffic = resolved.source === "TIME_SERIES" && ((metrics.visits ?? 0) > 0 || (metrics.clicks ?? 0) > 0);
     return NextResponse.json({
       metricsSource: resolved.source,
-      dataClass: resolved.source === "TIME_SERIES" ? resolved.dataClass : "REAL_DATA",
+      dataClass: resolved.dataClass,
       recordCount: resolved.recordCount,
       evaluation: evaluateExperimentMetrics(metrics),
       decision: decideExperiment(metrics, hasTraffic),
@@ -93,11 +94,16 @@ export async function POST(_request: Request, { params }: { params: { id: string
     const resolved = await resolveMetrics(experiment.id, user.id);
     if (!resolved) return NextResponse.json({ error: "Experiment not found" }, { status: 404 });
 
-    const metrics: ExperimentMetrics =
-      resolved.source === "TIME_SERIES"
-        ? resolved.metrics
-        : ((experiment.metrics ?? {}) as ExperimentMetrics);
-    const hasTraffic = (experiment.visitors ?? 0) > 0 || (experiment.clicks ?? 0) > 0;
+    // A legacy experiment with no traceable metric rows is evaluated as an
+    // explicit INCONCLUSIVE/NOT_MEASURED lifecycle, never as REAL_DATA.
+    if (resolved.source === "TIME_SERIES" && resolved.dataClass !== "REAL_DATA") {
+      return NextResponse.json(
+        { error: "REAL_DATA is required for a learning decision; estimated metrics remain non-real", dataClass: resolved.dataClass },
+        { status: 422 },
+      );
+    }
+    const metrics: ExperimentMetrics = resolved.metrics;
+    const hasTraffic = (metrics.visits ?? 0) > 0 || (metrics.clicks ?? 0) > 0;
     const decision = decideExperiment(metrics, hasTraffic);
     if (!decision) {
       return NextResponse.json({ error: "No metrics recorded to evaluate" }, { status: 422 });
@@ -118,6 +124,9 @@ export async function POST(_request: Request, { params }: { params: { id: string
           ? "All recorded metric periods are marked ESTIMATED_DATA; treat results as forecasts, not measurements."
           : `Series mixes estimated periods (${resolved.estimatedRecordCount} of ${resolved.recordCount}) with recorded ones; results are partly forecast-based.`,
       );
+    } else if (resolved.dataClass === "NOT_MEASURED") {
+      feedback.dataClass = "ESTIMATED_DATA";
+      feedback.lessons.push("NOT_MEASURED: no traceable source-backed metric exists; no experiment outcome is inferred.");
     }
 
     const updated = await experimentRepository.update(experiment.id, {
@@ -135,7 +144,7 @@ export async function POST(_request: Request, { params }: { params: { id: string
       feedback,
       evaluation: computed,
       metricsSource: resolved.source,
-      dataClass: resolved.source === "TIME_SERIES" ? resolved.dataClass : "REAL_DATA",
+      dataClass: resolved.dataClass,
       recordCount: resolved.recordCount,
     });
   } catch (error) {

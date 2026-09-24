@@ -5,6 +5,7 @@ function basePayload(overrides: Record<string, unknown> = {}): Record<string, un
   return {
     periodStart: "2026-09-01T00:00:00.000Z",
     periodEnd: "2026-09-01T23:59:59.000Z",
+    dataClass: "ESTIMATED_DATA",
     impressions: 1000,
     ...overrides,
   };
@@ -57,16 +58,31 @@ describe("validateMetricPayload", () => {
   });
 
   it("rejects records with no measurements at all", () => {
-    const result = validateMetricPayload({ periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-09-01T01:00:00Z" });
+    const result = validateMetricPayload({ periodStart: "2026-09-01T00:00:00Z", periodEnd: "2026-09-01T01:00:00Z", dataClass: "ESTIMATED_DATA" });
     expect(result.ok).toBe(false);
     expect(result.errors.join(" ")).toContain("at least one metric value");
   });
 
-  it("defaults dataClass to REAL_DATA and recordedAt to a valid date", () => {
-    const result = validateMetricPayload(basePayload());
+  it("requires an explicit data class and a provenance source for REAL_DATA", () => {
+    const missingClass = validateMetricPayload(basePayload({ dataClass: undefined, source: "analytics dashboard export" }));
+    expect(missingClass.ok).toBe(false);
+    expect(missingClass.errors.join(" ")).toContain("explicitly");
+
+    const missingSource = validateMetricPayload(basePayload({ dataClass: "REAL_DATA" }));
+    expect(missingSource.ok).toBe(false);
+    expect(missingSource.errors.join(" ")).toContain("source");
+
+    const real = validateMetricPayload(basePayload({ dataClass: "REAL_DATA", source: "analytics dashboard export" }));
+    expect(real.ok).toBe(true);
+    expect(real.data?.dataClass).toBe("REAL_DATA");
+    expect(real.data?.source).toBe("analytics dashboard export");
+    expect(real.data?.recordedAt.getTime()).not.toBeNaN();
+  });
+
+  it("allows estimated data to remain explicitly non-real without a source", () => {
+    const result = validateMetricPayload(basePayload({ dataClass: "ESTIMATED_DATA" }));
     expect(result.ok).toBe(true);
-    expect(result.data?.dataClass).toBe("REAL_DATA");
-    expect(result.data?.recordedAt.getTime()).not.toBeNaN();
+    expect(result.data?.dataClass).toBe("ESTIMATED_DATA");
   });
 
   it("rejects a provided-but-invalid recordedAt instead of defaulting", () => {

@@ -246,7 +246,7 @@ export function ExperimentMetrics({ experimentId }: { experimentId: string }) {
       )}
 
       <Card>
-        <CardHeader title="Record a metric period" subtitle="Append-only: corrections are added as new records, history is never rewritten." />
+        <CardHeader title="Record a metric period" subtitle="Append-only: corrections are added as new records, history is never rewritten. REAL_DATA requires a source; otherwise the record is explicitly estimated or not measured." />
         <form onSubmit={handleAdd} className="grid gap-3 p-5 text-sm md:grid-cols-4">
           <label className="md:col-span-2">
             <span className="mb-1 block font-medium">Period start *</span>
@@ -280,7 +280,7 @@ export function ExperimentMetrics({ experimentId }: { experimentId: string }) {
             </select>
           </label>
           <label className="md:col-span-2">
-            <span className="mb-1 block font-medium">Source</span>
+            <span className="mb-1 block font-medium">Source (required for REAL_DATA)</span>
             <input type="text" maxLength={120} placeholder="e.g. meta-ads-dashboard" value={form.source} onChange={(e) => setForm({ ...form, source: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-2" />
           </label>
           <label className="md:col-span-4">

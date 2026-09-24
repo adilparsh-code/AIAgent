@@ -11,6 +11,8 @@ import {
   computeExperimentRankingImpact,
   deriveLearningSignals,
   outcomeFromSignals,
+  opportunityLearningSignalFromOutcome,
+  mapLearningSignalToDecisionAction,
 } from "./experiment-learning";
 import type { SufficiencyAssessment } from "./experiment-learning";
 
@@ -35,6 +37,15 @@ function sufficiency(level: SufficiencyAssessment["level"], overrides: Partial<S
     ...overrides,
   };
 }
+
+describe("Phase 18 learning vocabulary", () => {
+  it("maps only observed outcomes to existing decision actions", () => {
+    expect(opportunityLearningSignalFromOutcome("INSUFFICIENT")).toBe("INSUFFICIENT_DATA");
+    expect(mapLearningSignalToDecisionAction("INSUFFICIENT_DATA")).toBe("RECORD_MORE_DATA");
+    expect(mapLearningSignalToDecisionAction("CONTRADICTORY_SIGNAL")).toBe("REVIEW_CONFLICT");
+    expect(mapLearningSignalToDecisionAction("BLOCKED")).toBe("BLOCKED");
+  });
+});
 
 describe("assessExperimentSufficiency", () => {
   it("tiny experiment → INSUFFICIENT", () => {

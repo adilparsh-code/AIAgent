@@ -11,6 +11,8 @@ import { summarizeMetricSeries, orderChronologically } from "@/lib/metric-aggreg
 import { buildExperimentFeedback, decideExperiment } from "@/lib/experiment-evaluation";
 import { getIntegrationRegistry } from "@/lib/integrations/registry";
 import { resolveTestAction } from "@/lib/integrations/test-execution";
+import { experimentStatusAfterExecution } from "@/lib/experiment-lifecycle";
+import { logger } from "@/lib/server/logger";
 
 const MAX_BODY_BYTES = 4_000;
 const MAX_ID_LENGTH = 64;
@@ -142,6 +144,17 @@ export async function POST(request: Request, context: { params: { id: string } }
     }
 
     const outcome = await runAgentTaskExecution(taskId, user.id, { mode, action: descriptor.action });
+    // A completed execution only moves the experiment to ACTIVE/measurement
+    // collection. It never sets COMPLETED, WIN, or VALIDATED.
+    const lifecycleStatus = experimentStatusAfterExecution(outcome.status as Parameters<typeof experimentStatusAfterExecution>[0]);
+    await experimentRepository.update(experiment.id, { status: lifecycleStatus }).catch(() => undefined);
+    logger.operationalEvent({
+      event: outcome.status === "SUCCEEDED" ? "EXPERIMENT_STARTED" : "EXPERIMENT_STOPPED",
+      safeMessage: `Experiment execution ${outcome.status.toLowerCase()}; lifecycle state ${lifecycleStatus}.`,
+      severity: outcome.status === "SUCCEEDED" ? "INFO" : "WARNING",
+      executionId: outcome.executionId ?? undefined,
+      dataClass: "UNKNOWN",
+    });
     const artifacts = await prisma.agentArtifact.findMany({ where: { taskId }, orderBy: { createdAt: "desc" } });
 
     // Truthful evaluation: only when the provider produced real measurements.
@@ -150,30 +163,33 @@ export async function POST(request: Request, context: { params: { id: string } }
     if (outcome.status === "SUCCEEDED") {
       const rows = await metricRepository.listForOwner(experiment.id, user.id);
       if (rows && rows.length > 0) {
-        const summary = summarizeMetricSeries(orderChronologically(rows));
-        const decision = decideExperiment(
-          {
-            visitors: summary.totals.visits ?? undefined,
-            clicks: summary.totals.clicks ?? undefined,
-            leads: summary.totals.leads ?? undefined,
-            conversions: summary.totals.conversions ?? undefined,
-            revenue: summary.totals.revenue ?? undefined,
-            cost: summary.totals.cost ?? undefined,
-          } as never,
-          (summary.totals.visits ?? 0) > 0 || (summary.totals.clicks ?? 0) > 0,
-        );
-        if (decision) {
+        const safeRows = rows.map((row) => ({
+          ...row,
+          dataClass: row.dataClass === "REAL_DATA" && row.source.trim() ? "REAL_DATA" as const : "ESTIMATED_DATA" as const,
+        }));
+        const summary = summarizeMetricSeries(orderChronologically(safeRows));
+        const metrics = {
+          visits: summary.totals.visits ?? undefined,
+          clicks: summary.totals.clicks ?? undefined,
+          leads: summary.totals.leads ?? undefined,
+          conversions: summary.totals.conversions ?? undefined,
+          revenue: summary.totals.revenue ?? undefined,
+          cost: summary.totals.cost ?? undefined,
+        };
+        const decision = decideExperiment(metrics, (summary.totals.visits ?? 0) > 0 || (summary.totals.clicks ?? 0) > 0);
+        if (decision && summary.dataClass === "REAL_DATA") {
           const feedback = buildExperimentFeedback({
             opportunityId: experiment.opportunityId,
             experimentId: experiment.id,
             hypothesis: experiment.hypothesis,
-            metrics: {} as never,
+            metrics,
             decision: decision.decision,
           });
-          await experimentRepository.update(experiment.id, {
-            feedback,
-          }).catch(() => undefined);
-          evaluation = { decision: decision.decision, basis: decision.basis, records: rows.length };
+          await experimentRepository.update(experiment.id, { feedback }).catch(() => undefined);
+          evaluation = { decision: decision.decision, basis: decision.basis, records: rows.length, dataClass: summary.dataClass };
+          logger.operationalEvent({ event: "EXPERIMENT_MEASURING", safeMessage: `Source-backed metrics observed for experiment ${experiment.id}; evaluation remains bounded to observed data.`, severity: "INFO", dataClass: "REAL_DATA" });
+        } else if (!evaluation) {
+          evaluation = { decision: "INSUFFICIENT_DATA", basis: "Provider execution did not produce source-backed REAL_DATA metrics.", records: rows.length, dataClass: summary.dataClass };
         }
       }
     }

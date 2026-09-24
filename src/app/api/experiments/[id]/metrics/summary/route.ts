@@ -36,7 +36,11 @@ export async function GET(request: Request, { params }: { params: { id: string }
     if (rows === null) {
       return NextResponse.json({ error: "Experiment not found" }, { status: 404 });
     }
-    const ordered = orderChronologically(rows);
+    const safeRows = rows.map((row) => ({
+      ...row,
+      dataClass: row.dataClass === "REAL_DATA" && row.source.trim() ? "REAL_DATA" as const : "ESTIMATED_DATA" as const,
+    }));
+    const ordered = orderChronologically(safeRows);
     const summary = summarizeMetricSeries(ordered);
     return NextResponse.json({
       summary,

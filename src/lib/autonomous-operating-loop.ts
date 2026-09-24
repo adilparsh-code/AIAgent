@@ -26,6 +26,7 @@ export const AUTONOMOUS_OPERATING_LOOP_STAGES = [
   "EXECUTION",
   "MEASUREMENT",
   "REASSESSMENT",
+  "PORTFOLIO_REASSESSMENT",
 ] as const;
 export type AutonomousOperatingLoopStage = (typeof AUTONOMOUS_OPERATING_LOOP_STAGES)[number];
 
@@ -98,7 +99,15 @@ function actionStage(candidate: OperatingLoopCandidate): AutonomousOperatingLoop
 
 function nextActionFor(candidate: OperatingLoopCandidate, stage: AutonomousOperatingLoopStage): string {
   if (stage === "REASSESSMENT") return "Reassess opportunity.";
+  if (stage === "PORTFOLIO_REASSESSMENT") return "Reassess opportunity and portfolio priority.";
   return candidate.decision.recommendedAction.action;
+}
+
+function stableLoopCycleId(portfolio: OpportunityPortfolioIntelligence, opportunityId: string, stage: AutonomousOperatingLoopStage): string {
+  const basis = `${portfolio.portfolioDecision}|${opportunityId}|${stage}|${portfolio.totalOpportunities}`;
+  let hash = 0;
+  for (const character of basis) hash = (hash * 31 + character.charCodeAt(0)) | 0;
+  return `cycle-${Math.abs(hash).toString(36)}`;
 }
 
 function emptyLoop(
@@ -107,7 +116,7 @@ function emptyLoop(
   explanation: string[],
 ): AutonomousOperatingLoop {
   return {
-    cycleId: `cycle-${now.getTime()}-empty`,
+    cycleId: stableLoopCycleId(portfolio, "empty", "PORTFOLIO_ASSESSMENT"),
     generatedAt: now.toISOString(),
     portfolioDecision: portfolio.portfolioDecision,
     selectedOpportunityId: null,
@@ -231,7 +240,7 @@ export function createAutonomousOperatingLoop(input: {
   ];
 
   return {
-    cycleId: `cycle-${now.getTime()}-${candidate.opportunityId}`,
+    cycleId: stableLoopCycleId(portfolio, candidate.opportunityId, stage),
     generatedAt: now.toISOString(),
     portfolioDecision: portfolio.portfolioDecision,
     selectedOpportunityId: candidate.opportunityId,

@@ -125,7 +125,7 @@ export function validateMetricPayload(body: unknown): ValidatedMetricInput {
     cost: null,
     currency: "USD",
     source: "",
-    dataClass: "REAL_DATA",
+    dataClass: "ESTIMATED_DATA",
     notes: "",
   };
 
@@ -154,13 +154,16 @@ export function validateMetricPayload(body: unknown): ValidatedMetricInput {
   if (currency === undefined) errors.push("currency must be a 3-letter ISO code when provided");
   else data.currency = currency;
 
-  const dataClass = parseDataClass(input.dataClass ?? "REAL_DATA");
-  if (dataClass === undefined) errors.push("dataClass must be REAL_DATA or ESTIMATED_DATA");
+  const dataClass = parseDataClass(input.dataClass);
+  if (dataClass === undefined) errors.push("dataClass must be explicitly REAL_DATA or ESTIMATED_DATA");
   else data.dataClass = dataClass;
 
   if (input.source !== undefined) {
     if (typeof input.source !== "string") errors.push("source must be a string");
     else data.source = input.source.trim().slice(0, MAX_METRIC_SOURCE_LENGTH);
+  }
+  if (errors.length === 0 && data.dataClass === "REAL_DATA" && !data.source) {
+    errors.push("REAL_DATA requires a non-empty source describing the permitted measurement origin");
   }
   if (input.notes !== undefined) {
     if (typeof input.notes !== "string") errors.push("notes must be a string");

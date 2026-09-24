@@ -59,7 +59,9 @@ function toMetricPoint(row: MetricRowLike): MetricPointRaw {
     cost: row.cost === null ? null : Number(row.cost),
     currency: row.currency,
     source: row.source,
-    dataClass: row.dataClass === "ESTIMATED_DATA" ? "ESTIMATED_DATA" : "REAL_DATA",
+    // REAL_DATA is valid only when traceable source provenance is present.
+    // Legacy rows with an empty source are never silently upgraded.
+    dataClass: row.dataClass === "REAL_DATA" && row.source.trim() ? "REAL_DATA" : "ESTIMATED_DATA",
     notes: row.notes,
   };
 }
@@ -445,10 +447,22 @@ export async function rerankOpportunities(ownerId: string): Promise<{
           } as unknown as PrismaJson,
         },
       });
+      logger.operationalEvent({
+        event: "LEARNING_SIGNAL_GENERATED",
+        safeMessage: `Learning signal generated for experiment ${experimentId}; data class ${contract.experimentEvidence.dataClass}.`,
+        severity: contract.outcome === "INSUFFICIENT" ? "WARNING" : "INFO",
+        dataClass: contract.experimentEvidence.dataClass === "ESTIMATED_DATA" ? "ESTIMATED_DATA" : "REAL_DATA",
+      });
     }
   }
 
-  logger.researchCompleted("rerank", `${ranked.length} opportunities`, "COMPLETED", 0, "phase6c");
+  logger.operationalEvent({
+    event: "OPPORTUNITY_REASSESSED",
+    safeMessage: `Opportunity reassessment completed for ${ranked.length} opportunities using persisted research and experiment evidence.`,
+    severity: "INFO",
+    dataClass: "UNKNOWN",
+  });
+  logger.researchCompleted("rerank", `${ranked.length} opportunities`, "COMPLETED", 0, "phase18");
   return { ranked, snapshotIds };
 }
 
