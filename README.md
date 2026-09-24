@@ -678,6 +678,63 @@ Research → Research Intelligence → Readiness → Decision → Next Action
 - **Security**: the decision engine is pure and advisory — it can neither publish, send, spend, nor
   execute. Execution still runs exclusively through the Phase 7/9 approval + capability gates.
 
+## Phase 12 — Opportunity portfolio intelligence + experiment prioritization
+
+The portfolio layer evaluates the CURRENT portfolio of opportunities collectively and answers: "given
+the opportunities and their current evidence, readiness, decision, experiment, handoff and execution
+states, what should the system process next?" It is **not a profitability prediction system** and
+never labels an opportunity best / worst / winner / loser / most profitable.
+
+```
+Individual Opportunity → Readiness → Decision
+  → Portfolio Aggregation → Operational Queue → Experiment Prioritization
+  → Learning → Handoff → Execution
+```
+
+- **Portfolio module** (`src/lib/opportunity-portfolio.ts`): pure and deterministic. It consumes the
+  EXISTING read-model outputs (readiness engine + decision engine + persisted experiment/handoff
+  facts) and only aggregates and buckets them — it introduces **no second persisted status system**
+  and re-derives no individual decision.
+- **Operational queues** (deterministic projection of the existing decision read-model):
+  `RESEARCH_QUEUE`, `VALIDATION_QUEUE`, `EXPERIMENT_QUEUE`, `LEARNING_QUEUE`, `HANDOFF_QUEUE`,
+  `EXECUTION_QUEUE`, `HUMAN_REVIEW_QUEUE`, `BLOCKED_QUEUE`, `MONITOR_QUEUE`.
+- **Portfolio decision** (first decisive rule wins, derived only from persisted opportunity
+  decisions): `FILL_RESEARCH_GAPS` → `VALIDATE_OPPORTUNITIES` → `RUN_EXPERIMENTS` →
+  `IMPROVE_EXPERIMENTS` → `REVIEW_CONFLICTS` → `COMPLETE_HANDOFFS` → `EXECUTE_APPROVED_WORK` →
+  `HUMAN_REVIEW_REQUIRED` → `MONITOR`. Exactly one portfolio-level action is surfaced.
+- **Experiment prioritization** (`src/lib/experiment-prioritization.ts`): an explicit, weighted,
+  explainable operational attention score. Every factor reports the value it read, the weight
+  applied, the contribution, and the persisted basis: decision readiness (20), evidence
+  completeness (15), REAL_DATA coverage (20), experiment availability (10), research freshness
+  (10), learning signal (10), experiment freshness (10), approval flow (5); penalties for
+  contradictions (25), execution blockers (15), pending approval (10), stale research (10), and
+  insufficient REAL_DATA (10). Missing inputs score 0 and say so — values are never invented.
+- **Data-class rules** (never relaxed): only `REAL_DATA` `ExperimentMetric` periods contribute to
+  sufficiency. `SAMPLE_DATA`, `ESTIMATED_DATA`, and unparseable/unknown classes are never promoted
+  to `REAL_DATA`; estimated periods are reported as present-but-excluded. Nothing here invents
+  demand, revenue, conversion, market size, profitability, or user counts.
+- **Concentration warnings** (operational only, no financial diversification claims): research /
+  validation / approval backlogs, conflict clusters, opportunities sharing the same open evidence
+  gap, experiments lacking REAL_DATA, a stale-research cluster, and multiple opportunities whose
+  latest research run FAILED (a possible shared provider issue).
+- **API**: `GET /api/opportunities/portfolio` (`requireUser()`, owner-scoped; only the caller's own
+  non-sample opportunities are read, so there is no cross-user opportunity/research/experiment
+  leakage; bounded reads with a constant query count; no external calls; no secrets; deterministic).
+- **UI**: `src/components/OpportunityPortfolioPanel.tsx` on `/opportunities` — summary counts, the
+  single current portfolio action, operational queues, neutral-labelled opportunities requiring
+  attention, concentration warnings, and data quality (REAL_DATA coverage, non-real data
+  limitations, stale research count). No guaranteed income, profit predictions, or investment-style
+  ranking.
+- **Security**: portfolio intelligence is advisory. It cannot publish, send, spend, or execute;
+  execution remains exclusively behind the existing approval + capability gates.
+- **Performance**: `src/lib/server/opportunity-decision-loader.ts` loads up to 50 opportunities with
+  4 constant-count queries (no N+1) and is shared by both the per-opportunity decision service and
+  the portfolio service, so the row → read-model mapping exists in exactly one place.
+- **API-independent operation**: everything is computed from existing PostgreSQL/Prisma data. No
+  Brave, Tavily, SerpAPI, SambaNova, OpenAI, Reddit, or Google Trends access is required. Future
+  live providers plug into the research cycle's `COLLECT` stage without changing the portfolio,
+  decision, or prioritization architecture.
+
 ## Intentionally deferred
 
 - Real external API executions against paid/social providers (scaffold adapters stay honestly
