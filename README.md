@@ -574,6 +574,58 @@ the time of writing:
 See `docs/integrations.md` (operations) and `docs/environment.md` (every
 server-side variable).
 
+## Phase 10 — Opportunity Decision Readiness engine
+
+The Opportunity Readiness engine answers, from **persisted application data
+only**: what do we know, what evidence is missing, is the opportunity
+research-ready / validation-ready / handoff-ready / blocked, what is the
+safest next action, is the research stale, do experiments provide enough REAL
+data to affect the decision, and are there contradictions requiring a human.
+
+**This engine does not create market evidence. It interprets persisted
+application evidence.**
+
+- No external API, no API keys, no network calls, no fabricated data. The
+  pure core lives in `src/lib/opportunity-readiness.ts` and every conclusion
+  cites the persisted signal it is derived from (`explanation[]`).
+- Readiness states (deterministic, first decisive rule wins):
+  `RESEARCH_REQUIRED`, `RESEARCH_IN_PROGRESS`, `EVIDENCE_INSUFFICIENT`,
+  `VALIDATION_REQUIRED`, `VALIDATION_CONFLICTED`, `EXPERIMENT_REQUIRED`,
+  `EXPERIMENT_INSUFFICIENT`, `HANDOFF_READY`, `HUMAN_REVIEW_REQUIRED`,
+  `READY_FOR_EXECUTION`, `BLOCKED`.
+- Freshness policy: `DEFAULT_RESEARCH_FRESHNESS_DAYS = 30` (configurable in
+  `READINESS_POLICY` / per call). `calculateResearchFreshness()` returns
+  `NO_RESEARCH` vs `STALE_RESEARCH` vs `CURRENT_RESEARCH`. Stale research
+  **only** means stored research is older than the configured threshold — it
+  never claims demand changed or disappeared, and existing research is never
+  rewritten or deleted.
+- Evidence gaps come from the persisted `Validation` signals (demand, pain
+  point, commercial intent, trend, competition), `sourceDiversity`, and
+  `contradictionCount`, emitted as machine-readable areas: `DEMAND`,
+  `PAIN_POINT`, `COMMERCIAL_INTENT`, `TREND`, `COMPETITION`,
+  `SOURCE_DIVERSITY`, `CONTRADICTION_RESOLUTION`, `EXPERIMENT_DATA`.
+- Experiment data-class rules: only `REAL_DATA` `ExperimentMetric` rows count
+  as real-world evidence (minimum `MIN_REAL_METRIC_PERIODS = 2` periods).
+  `ESTIMATED_DATA` rows are reported as `ESTIMATED_DATA` and are **never**
+  treated as validated real-world performance. A completed experiment whose
+  REAL_DATA outcome contradicts the research-supported commercial intent
+  forces `HUMAN_REVIEW_REQUIRED`.
+- Existing opportunity scores are never overridden: the engine emits a
+  separate `readinessScore` (decision readiness, not quality).
+- API: `GET /api/opportunities/:id/readiness` (`requireUser()`, owner-scoped,
+  foreign and sample opportunities return an indistinguishable 404; no
+  secrets; no external calls). The server service uses bounded queries (10
+  runs, 20 experiments, 60 metric periods each) — no unbounded loads and no
+  schema changes (readiness is computed on request, nothing cached).
+- UI: `src/components/OpportunityReadiness.tsx` on the opportunity detail
+  page (next to Research / Research intelligence / Opportunity learning),
+  showing state, confidence, freshness, evidence gaps, contradictions,
+  experiment status, handoff readiness, and the grounded next action. Missing
+  data is stated explicitly; there are no fake progress bars.
+- Limitations: readiness reflects only what the application has persisted —
+  it cannot discover new evidence, and a stale/absent run simply means the
+  stored data is old or missing, nothing more.
+
 ## Intentionally deferred
 
 - Real external API executions against paid/social providers (scaffold adapters stay honestly

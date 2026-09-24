@@ -12,6 +12,7 @@ import { Badge, Card, CardHeader, ScoreBar, Button, statusBadgeClass } from "@/c
 import { ResearchResultCard } from "@/components/ResearchResultCard";
 import { OpportunityLearning } from "@/components/OpportunityLearning";
 import { ResearchHistoryIntelligence } from "@/components/ResearchHistoryIntelligence";
+import { OpportunityReadiness } from "@/components/OpportunityReadiness";
 import { formatRelativeTime } from "@/lib/format";
 
 export default function OpportunityDetailPage({ params }: { params: { id: string } }) {
@@ -245,6 +246,7 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
         </div>
       </Card>
       {researchRun && <ResearchResultCard run={researchRun} />}
+      {!isSample && <OpportunityReadiness opportunityId={params.id} />}
       {!isSample && <ResearchHistoryIntelligence opportunityId={params.id} />}
       {!isSample && <OpportunityLearning opportunityId={params.id} />}
       {researchHistory.length > 1 && (

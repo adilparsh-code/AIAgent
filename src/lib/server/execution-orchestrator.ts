@@ -182,6 +182,23 @@ export async function runAgentTaskExecution(
     return { executionId: null, status: "BLOCKED", mode, created: false, result: null, message: "task not found for this owner" };
   }
   if (["COMPLETED", "CANCELLED", "BLOCKED"].includes(task.status)) {
+    // Idempotent replay: a duplicate submission after the task finished
+    // resolves to the execution that actually ran, instead of reporting a
+    // dangling null and looking like a new attempt.
+    const previous = await prisma.agentExecution.findFirst({
+      where: { taskId: task.id, ownerId },
+      orderBy: { createdAt: "desc" },
+    });
+    if (previous) {
+      return {
+        executionId: previous.id,
+        status: previous.status as AgentExecutionStatus,
+        mode,
+        created: false,
+        result: (previous.result as AgentExecutionResult | null) ?? null,
+        message: `task is ${task.status}; returning the recorded execution`,
+      };
+    }
     return { executionId: null, status: "BLOCKED", mode, created: false, result: null, message: `task is ${task.status}; not executable` };
   }
   if (task.status === "WAITING_APPROVAL") {
@@ -451,7 +468,15 @@ export async function runAgentTaskExecution(
         executionResult.dataClass,
         "LIVE",
       );
-      await markTaskCompleted(prisma, task, result, attempts, durationSince(overallStartedAt), artifactId);
+      await markTaskCompleted(
+        prisma,
+        task,
+        result,
+        attempts,
+        durationSince(overallStartedAt),
+        artifactId,
+        dataClass,
+      );
       const { ingestMetricsIfMeasurable } = await import("@/lib/integrations/execution-bridge");
       await ingestMetricsIfMeasurable(task.experimentId, ownerId, adapter.name, executionResult).catch(() => undefined);
       logger.integrationExecuted(adapter.name, entry.action, "SUCCEEDED", durationSince(overallStartedAt), ownerId);
@@ -541,6 +566,7 @@ async function markTaskCompleted(
   attempts: number,
   durationMs: number,
   artifactId: string | null,
+  dataClass: string,
 ): Promise<void> {
   await prisma.agentTask.update({
     where: { id: task.id },
@@ -555,7 +581,9 @@ async function markTaskCompleted(
         artifactId,
         actionsPerformed: [result.action],
         remainingWork: null,
-        dataClass: result.mode === "DRY_RUN" ? "SAMPLE_DATA" : "REAL_DATA",
+        // Preserve the adapter's classification. Generated model text is
+        // AI_GENERATED, never REAL_DATA; the caller's label is authoritative.
+        dataClass: result.mode === "DRY_RUN" ? "SAMPLE_DATA" : dataClass,
       },
       attempt: attempts,
       errors: [],

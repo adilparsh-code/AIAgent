@@ -191,18 +191,32 @@ describe.skipIf(!hasDb)("Phase 9 live execution (real PostgreSQL, stubbed provid
   }
 
   async function registerUser(tag: string) {
-    const { POST: register } = await import("@/app/api/auth/register/route");
-    const response = await register(
-      makeRequest("http://localhost/api/auth/register", {
+    // Users are created directly (one login per user) instead of hammering the
+    // registration endpoint, which is deliberately rate-limited per IP.
+    const { hashPassword } = await import("@/lib/server/password");
+    const password = "password-P-123";
+    const user = await prisma.user.create({
+      data: {
+        // Login normalizes addresses to lowercase; direct fixture creation
+        // must persist the same canonical form (tags above intentionally use
+        // capitals to catch this regression).
+        email: `p9-${tag}-${suffix()}@example.com`.toLowerCase(),
+        name: `P9 ${tag}`,
+        passwordHash: await hashPassword(password),
+        role: "USER",
+        status: "ACTIVE",
+      },
+    });
+    created.push(user.id);
+    const { POST: login } = await import("@/app/api/auth/login/route");
+    const loginResponse = await login(
+      makeRequest("http://localhost/api/auth/login", {
         method: "POST",
-        body: { email: `p9-${tag}-${suffix()}@example.com`, password: "password-P-123", name: `P9 ${tag}` },
+        body: { email: user.email, password },
       }),
     );
-    expect(response.status).toBe(201);
-    const cookie = { ail_session: sessionToken(response) };
-    const id = ((await response.json()) as { user: { id: string } }).user.id;
-    created.push(id);
-    return { cookie, id };
+    expect(loginResponse.status).toBe(200);
+    return { cookie: { ail_session: sessionToken(loginResponse) }, id: user.id };
   }
 
   it("requires authentication", async () => {
@@ -308,8 +322,12 @@ describe.skipIf(!hasDb)("Phase 9 live execution (real PostgreSQL, stubbed provid
     expect(execution.action).toBe("GENERATE_TEXT");
     expect(execution.status).toBe("SUCCEEDED");
     expect(execution.dryRun).toBe(false);
+    expect(execution.dataClass).toBe("AI_GENERATED");
+    const task = await prisma.agentTask.findUniqueOrThrow({ where: { id: `test_${requestId}` } });
+    expect(task.result).toMatchObject({ dataClass: "AI_GENERATED" });
     const audit = await prisma.integrationExecution.findFirst({ where: { taskId: `test_${requestId}` } });
     expect(audit).toBeTruthy();
+    expect(audit?.dataClass).toBe("AI_GENERATED");
     const artifact = await prisma.agentArtifact.findUniqueOrThrow({ where: { id: body.artifactId! } });
     expect(artifact.dataClass).toBe("AI_GENERATED");
     expect(artifact.content).toContain("AIAGENT PHASE 9 TEST OK");
@@ -324,7 +342,11 @@ describe.skipIf(!hasDb)("Phase 9 live execution (real PostgreSQL, stubbed provid
     const first = await runTestExecution({ integrationName: "sambanova", ownerId: user.id, requestId });
     const second = await runTestExecution({ integrationName: "sambanova", ownerId: user.id, requestId });
     expect(second.taskId).toBe(first.taskId);
+    // A duplicate submission must resolve to the same execution row (or, once
+    // the execution reached a terminal state, return that same row) — never a
+    // second provider call and never a null/dangling reference.
     expect(second.executionId).toBe(first.executionId);
+    expect(second.status).toBe(first.status);
     if (process.env.SAMBANOVA_API_KEY) {
       expect(calls.length).toBe(1);
     }
@@ -423,7 +445,10 @@ describe.skipIf(!hasDb)("Phase 9 live execution (real PostgreSQL, stubbed provid
     await runTestExecution({ integrationName: "sambanova", ownerId: user.id, requestId: `inj_${suffix()}` });
     if (calls.length === 0) return;
     const sent = calls[0].body ?? "";
-    // The objective/instructions are fixed constants; nothing instructs tools.
-    expect(sent).not.toMatch(/execute|shell|bash|rm -rf/i);
+    // The objective/instructions are fixed constants. The orchestrator's own
+    // system prompt legitimately describes a "Controlled execution worker", so
+    // assert on concrete tool/shell directives rather than the benign word
+    // "execute". This proves user/task input cannot become an action verb.
+    expect(sent).not.toMatch(/shell|powershell|bash\s|rm\s+-rf|curl\s|wget\s|spend money|purchase|publish|send message/i);
   });
 });
