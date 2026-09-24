@@ -135,3 +135,51 @@ The activation state machine is intentionally conservative:
 
 The activation plan is generated from existing integration capabilities and
 health/execution contracts. It does not create a second source of truth.
+
+## Phase 17 controlled activation and first research cycle
+
+Phase 17 wraps the existing registry and execution orchestrator with three
+authenticated operations:
+
+- `POST /api/integrations/{id}/activate` — one real health check, persisted in
+  `IntegrationHealth`, with sanitized operational events.
+- `POST /api/integrations/{id}/live-test` — one allowlisted safe read/search or
+  draft action through the existing AgentTask, `AgentExecution`, and
+  `IntegrationExecution` path. It accepts a bounded `requestId` for idempotency.
+- `POST /api/research/live-cycle` — owner-scoped opportunity research. It first
+  health-checks the selected existing research providers, then calls the existing
+  `runResearch` and `researchRepository.save` contracts. The existing decision
+  pipeline is recomputed after persistence.
+
+`src/lib/integrations/live-activation-controller.ts` is deterministic around
+configuration, health, capability, approval, and execution gates. Its injected
+server adapter uses the existing services rather than bypassing them. Every
+attempt emits the Phase 14 operational event model and sanitized structured
+logging; raw provider output and headers are not returned.
+
+### Normalization and REAL_DATA
+
+`live-provider-normalization.ts` maps provider outcomes to safe metadata:
+provider, operation, success/status, latency, result count, sanitized error,
+data class, request ID, and execution ID. It handles success, authentication,
+credit/billing, rate limiting, timeout, unavailable, malformed, empty, and
+validation outcomes. Credit failures are non-retryable.
+
+`real-data-integrity.ts` is the evidence gate. A live observation is not
+`REAL_DATA` without a real successful provider health check, provider/source,
+valid source URL, observation timestamp, current research-run relationship, and
+evidence identity. Missing provenance downgrades the claim; it never fabricates
+a source or upgrades `SAMPLE_DATA`, `AI_ESTIMATE`, or `ESTIMATED_DATA`.
+
+### Failure and safety behavior
+
+`AUTH_FAILED` requires human review/configuration correction. `CREDIT_LIMITED`
+requires human review and never retries or spends. `RATE_LIMITED` and timeout
+return the existing bounded backoff recommendation. Malformed/empty responses
+require validation/research again. Data-integrity failures stop or refresh state.
+No failure is silently converted to success. Approval, ownership, capability,
+and execution-state checks remain authoritative.
+
+The first live cycle is safe only for read/search operations. Publish, messaging,
+campaign creation, uploading, and spending are not automatically executable;
+write-side live tests return `LIVE_WRITE_TEST_REQUIRES_APPROVAL`.

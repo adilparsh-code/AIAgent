@@ -82,20 +82,26 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
     setResearching(true);
     setResearchError(null);
     try {
-      const response = await fetch("/api/research", {
+      const controlled = !isSample;
+      const response = await fetch(controlled ? "/api/research/live-cycle" : "/api/research", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ opportunityId: opp.id, title: opp.title }),
+        body: JSON.stringify({
+          opportunityId: opp.id,
+          title: opp.title,
+          ...(controlled ? { requestId: `ui_${opp.id}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`.slice(0, 64) } : {}),
+        }),
       });
       const data = await response.json();
       if (!response.ok) {
-        const detail = typeof data?.error === "string" ? data.error : "Research failed";
+        const detail = typeof data?.error === "string" ? data.error : typeof data?.safeMessage === "string" ? data.safeMessage : "Research failed";
         throw new Error(detail);
       }
-      const run = data as ResearchRun;
+      const run = (controlled ? data.researchRun : data) as ResearchRun | null;
+      if (!run) throw new Error("No provider passed the real health gate; no research run was created.");
       setResearchRun(run);
       setSelectedRunId(run.id);
-      setResearchHistory((prev) => [run, ...prev].slice(0, 10));
+      setResearchHistory((prev) => [run, ...prev].filter((item) => item.id !== run.id).slice(0, 10));
     } catch (error) {
       setResearchError(error instanceof Error ? error.message : "Research failed");
     } finally {
@@ -183,7 +189,7 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
       <div className="flex flex-wrap gap-2">
         {!isEditing && (
           <Button onClick={handleResearch} disabled={researching}>
-            {researching ? "Researching..." : "Run Live Research"}
+            {researching ? "Researching..." : isSample ? "Run Demo Research" : "Run Controlled Live Cycle"}
           </Button>
         )}
         {!isEditing && !isSample && (
@@ -225,10 +231,10 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
       <Card>
         <CardHeader
           title="Research"
-          subtitle="Runs real multi-provider research. Unavailable providers are shown honestly — no evidence is invented."
+          subtitle={isSample ? "Sample opportunities retain the existing demo research path." : "Owned opportunities require real provider health checks before bounded read/search calls. REAL_DATA provenance is enforced."}
           action={
             <Button onClick={handleResearch} disabled={researching}>
-              {researching ? "Researching…" : "Run Research"}
+              {researching ? "Researching…" : isSample ? "Run Research" : "Run Controlled Live Cycle"}
             </Button>
           }
         />

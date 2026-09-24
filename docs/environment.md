@@ -115,3 +115,66 @@ log.
 
 This phase documents readiness and safe decisions. It does not execute external
 actions automatically.
+
+## Phase 17 — Controlled live activation and first research cycle
+
+Phase 17 adds a controlled boundary around the existing integration and
+research contracts. It does not add a provider, credential, dependency, or
+migration. Provider calls happen only when an authenticated operator invokes a
+controlled endpoint and the server-side health/configuration gates pass.
+
+### Supported live providers
+
+| Provider | Server-side variables | Safe live capability | REAL_DATA provenance |
+| --- | --- | --- | --- |
+| Brave Search | `BRAVE_SEARCH_API_KEY` (required) | `SEARCH_WEB` | provider, operation, observation timestamp, source URL, research run, and evidence relationship are required |
+| Reddit | none | `SEARCH_POSTS` | same gate; public endpoint failures remain honest |
+| Google Trends via SerpApi | `SERPAPI_API_KEY` (required) | `SEARCH_TRENDS` | same gate; values remain relative provider observations |
+| SambaNova | `SAMBANOVA_API_KEY` (required) | `GENERATE_TEXT` draft only | generated drafts remain `AI_ESTIMATE`, never research REAL_DATA |
+
+Generic agent-runtime provider configuration remains visible as activation
+metadata only until its existing runtime health contract is available. Scaffold
+integrations remain disabled. Do not add Tavily, OpenRouter, or another provider
+without an existing adapter and a separate reviewed contract.
+
+### Controlled activation procedure
+
+1. Set the provider secret in server-side hosting settings or the workspace
+   environment settings. Never use `NEXT_PUBLIC_*`, commit `.env`, or paste a
+   secret into a request, test, log, screenshot, or API response.
+2. Verify the variable is visible by name/presence only and that no value is
+   returned by `/api/integrations/activation`.
+3. `POST /api/integrations/{id}/activate` performs one real health check and
+   persists `IntegrationHealth`. Configuration alone is never `HEALTHY`.
+4. Review `AUTH_FAILED`, `CREDIT_LIMITED`, `RATE_LIMITED`, `UNAVAILABLE`, and
+   `DEGRADED` honestly. Credit/billing failures are never retried or spent.
+5. `POST /api/integrations/{id}/live-test` runs one bounded allowlisted safe test
+   through the existing AgentTask/execution orchestrator. The response is
+   sanitized and correlated to `IntegrationExecution`; a repeated `requestId`
+   resolves through the existing idempotency key.
+6. Only `READ_DATA`, `SEARCH`, and `CREATE_DRAFT` are testable. A write-side
+   request returns `LIVE_WRITE_TEST_REQUIRES_APPROVAL`; `PUBLISH`,
+   `SEND_MESSAGE`, `CREATE_CAMPAIGN`, and `SPEND_MONEY` remain approval-gated
+   and are never automatic.
+7. For an owned opportunity, `POST /api/research/live-cycle` health-checks the
+   selected existing research providers, runs the existing `runResearch` and
+   `researchRepository.save` path, audits provenance, and recomputes the
+   existing opportunity decision. It does not create a second research system.
+8. Only provider-backed evidence with a real health check, source reference,
+   observation timestamp, operation, research run, and evidence relationship may
+   remain `REAL_LIVE_DATA`/`REAL_DATA`. `SAMPLE_DATA`, `AI_ESTIMATE`, and
+   `ESTIMATED_DATA` are never upgraded. Missing provenance downgrades the claim
+   and requires more research.
+9. Verify the operational event stream, health dashboard, integration execution
+   audit, decision result, experiment bridge (only when measurable and REAL_DATA),
+   approval gates, and secret audit before any further action.
+
+Rollback/stop conditions: stop on authentication failure, credit/billing
+failure, rate limiting, malformed or empty response, data-integrity failure,
+missing provenance, unexpected provider status, or any request to publish,
+send, spend, create a campaign, or modify an external account. A stop is a
+human-review outcome, not a reason to fabricate a result.
+
+Implementation is live-activation ready, but no real provider call is performed
+by this documentation or by the test suite unless an authenticated operator
+explicitly invokes the controlled endpoint with server-side configuration.
