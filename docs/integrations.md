@@ -114,3 +114,24 @@ chain-of-thought, never secrets.
 | Execution `UNAVAILABLE` | Adapter has no credentials | Configure the provider, then re-run the health check. |
 | Execution `FAILED` with sanitized error | Provider/transport failure | Check the health check result and the error summary on the execution. |
 | `WAITING_APPROVAL` on the task | Approval-class action | Approve explicitly — or use a safe action instead. |
+
+## Phase 15 activation readiness
+
+`GET /api/integrations/activation` is an authenticated, bounded, read-only
+metadata endpoint. It does not run a health check, call a provider, or return
+secret values. The `ProviderActivationPanel` on `/integrations` displays the
+same safe state.
+
+The activation state machine is intentionally conservative:
+
+- configuration present without a real health check is
+  `READY_FOR_HEALTH_CHECK`, never `HEALTHY`;
+- a real health check can produce `HEALTHY`, `DEGRADED`, `AUTH_FAILED`,
+  `CREDIT_LIMITED`, `RATE_LIMITED`, or `UNAVAILABLE`;
+- credit/billing failures are non-retryable and never trigger spending;
+- write-side capabilities stop at `LIVE_WRITE_TEST_REQUIRES_APPROVAL`;
+- `PUBLISH`, `SEND_MESSAGE`, `CREATE_CAMPAIGN`, and `SPEND_MONEY` remain
+  approval-gated through the existing capability contract.
+
+The activation plan is generated from existing integration capabilities and
+health/execution contracts. It does not create a second source of truth.

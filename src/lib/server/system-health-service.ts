@@ -3,6 +3,7 @@ import { getPrisma, isDbUnavailableError } from "@/lib/db";
 import { loadOpportunityDecisions } from "@/lib/server/opportunity-decision-loader";
 import { calculateSystemHealth, makeHealthCheck, type SystemHealth, type SystemHealthCheck } from "@/lib/system-health";
 import { getIntegrationRegistry } from "@/lib/integrations/registry";
+import { getProviderActivations } from "@/lib/integrations/activation-service";
 
 export const HEALTH_BOUNDS = { MAX_OPPORTUNITIES: 50, MAX_TASKS: 200, MAX_EXECUTIONS: 200, MAX_RESEARCH_RUNS: 200 } as const;
 
@@ -33,8 +34,27 @@ export async function getSystemHealth(ownerId: string, now = new Date()): Promis
     ["AGENT_RUNTIME", "Agent runtime is available; no external action was started."],
   ] as const) checks.push(makeHealthCheck({ component, status: "HEALTHY", message, dataClass: "REAL_DATA", now }));
   const registry = getIntegrationRegistry();
-  checks.push(makeHealthCheck({ component: "INTEGRATION_REGISTRY", status: registry.list().length > 0 ? "HEALTHY" : "BLOCKED", message: "Integration registry is loaded; external provider health remains unknown until a real health check runs.", dataClass: "UNKNOWN", now }));
-  return calculateSystemHealth({ checks, now });
+  const providerStates = (await getProviderActivations()).map((activation) => ({
+    provider: activation.provider,
+    status: activation.status,
+    configured: activation.configured,
+    healthCheckRequired: activation.healthCheckRequired,
+    safeReason: activation.safeReason,
+  }));
+  const hasBlockingProvider = providerStates.some((provider) => provider.status === "AUTH_FAILED" || provider.status === "CREDIT_LIMITED" || provider.status === "RATE_LIMITED" || provider.status === "UNAVAILABLE" || provider.status === "DEGRADED");
+  const hasUnverifiedProvider = providerStates.some((provider) => provider.status === "NOT_CONFIGURED" || provider.status === "READY_FOR_HEALTH_CHECK" || provider.status === "CONFIGURED");
+  const registryStatus = providerStates.length === 0
+    ? "BLOCKED" as const
+    : hasBlockingProvider
+      ? "DEGRADED" as const
+      : hasUnverifiedProvider
+        ? "UNKNOWN" as const
+        : "HEALTHY" as const;
+  const providerMessage = providerStates.length > 0
+    ? `Integration registry loaded ${providerStates.length} providers. Provider states: ${providerStates.map((provider) => `${provider.provider}=${provider.status}`).join(", ")}. Configuration is not health.`
+    : "Integration registry is empty; no provider adapter is available.";
+  checks.push(makeHealthCheck({ component: "INTEGRATION_REGISTRY", status: registryStatus, message: providerMessage, dataClass: "UNKNOWN", now }));
+  return calculateSystemHealth({ checks, providerStates, now });
 }
 
 export interface OperationalStatus {

@@ -66,3 +66,52 @@ Even with values present these stay `CONFIGURED` (never `HEALTHY`) and
    or API responses. Only names, presence, status, and sanitized errors.
 4. Production values are set through the hosting provider's environment
    settings; the sandbox `.env` values are development defaults.
+
+## Phase 15 — Live provider activation readiness
+
+Phase 15 is API-independent. It does not request credentials, call a provider,
+or change the existing provider architecture. The activation API returns only
+provider names, environment-variable names, status, capabilities, and safe
+reasons.
+
+| Provider | Required variables | Optional variables | Credential required | Current adapter |
+| --- | --- | --- | --- | --- |
+| Generic OpenAI-compatible agent runtime | `AI_PROVIDER_API_KEY` | `AI_PROVIDER_BASE_URL`, `AI_PROVIDER_MODEL`, `AI_PROVIDER_NAME`, `AI_PROVIDER_ENV` | yes | existing runtime adapter; no IntegrationHealth row yet |
+| SambaNova | `SAMBANOVA_API_KEY` | `SAMBANOVA_BASE_URL`, `SAMBANOVA_MODEL`, `AI_PROVIDER_ENV` | yes | implemented |
+| Brave Search | `BRAVE_SEARCH_API_KEY` | `RESEARCH_PROVIDER_ENV` | yes | implemented |
+| Reddit | none | `RESEARCH_PROVIDER_ENV` | no | implemented |
+| Google Trends via SerpApi | `SERPAPI_API_KEY` | `RESEARCH_PROVIDER_ENV` | yes | implemented |
+| Pinterest, YouTube, affiliate network, marketplace, analytics platform | provider-specific scaffold variable | none | per scaffold | disabled scaffold only |
+
+Use placeholders only when documenting a setup. Put values in the hosting
+provider's server-side environment settings. Never use `NEXT_PUBLIC_*` for a
+credential, never commit `.env` files, and never return values from an API or
+log.
+
+### Activation status and health behavior
+
+- `NOT_CONFIGURED`: required variables are absent; no call is attempted.
+- `READY_FOR_HEALTH_CHECK`: configuration is present but no successful real
+  health check is recorded. It is not `HEALTHY`.
+- `HEALTHY`: only a real health/authentication probe succeeded.
+- `AUTH_FAILED`, `CREDIT_LIMITED`, `RATE_LIMITED`, `UNAVAILABLE`, and
+  `DEGRADED`: the last real check observed that condition. Credit and billing
+  failures are not retried automatically.
+- `DISABLED`: scaffold or explicitly disabled integration; no live action.
+
+### Safe activation procedure
+
+1. Configure the provider secret server-side.
+2. Verify the secret is not exposed to the client, logs, prompts, or API.
+3. Run the existing real health-check route and review its sanitized result.
+4. Confirm the existing `IntegrationHealth` row was persisted.
+5. Run only a minimal safe read/search capability through the existing
+   authenticated execution flow; do not run write-side capabilities.
+6. Confirm the `IntegrationExecution` audit row and response normalization.
+7. Bridge a measurable result to `ExperimentMetric` only when the existing
+   contract marks it `REAL_DATA`.
+8. Verify the safe operational event, health dashboard, no-secret audit, and
+   approval gates before any end-to-end test.
+
+This phase documents readiness and safe decisions. It does not execute external
+actions automatically.

@@ -100,7 +100,7 @@ export function isRetryableExecutionOutcome(status: AgentExecutionStatus): boole
  */
 export const RETRYABLE_ERROR_CLASSES = ["SERVER", "NETWORK", "RATE_LIMIT"] as const;
 
-export type ExecutionErrorClass = "AUTH" | "RATE_LIMIT" | "TIMEOUT" | "SERVER" | "REQUEST" | "NETWORK" | "UNKNOWN";
+export type ExecutionErrorClass = "AUTH" | "CREDIT" | "RATE_LIMIT" | "TIMEOUT" | "SERVER" | "REQUEST" | "NETWORK" | "UNKNOWN";
 
 export function isRetryableErrorClass(errorClass: ExecutionErrorClass): boolean {
   return (RETRYABLE_ERROR_CLASSES as readonly string[]).includes(errorClass);

@@ -34,6 +34,14 @@ export interface SystemHealthCheck {
   observedAt: string;
 }
 
+export interface SystemHealthProviderState {
+  provider: string;
+  status: string;
+  configured: boolean;
+  healthCheckRequired: boolean;
+  safeReason: string;
+}
+
 export interface SystemHealth {
   status: SystemHealthStatus;
   checks: SystemHealthCheck[];
@@ -41,11 +49,13 @@ export interface SystemHealth {
   warnings: string[];
   degradedComponents: SystemHealthComponent[];
   healthyComponents: SystemHealthComponent[];
+  providerStates: SystemHealthProviderState[];
   generatedAt: string;
 }
 
 export interface CalculateSystemHealthInput {
   checks: SystemHealthCheck[];
+  providerStates?: SystemHealthProviderState[];
   now?: Date;
 }
 
@@ -79,6 +89,8 @@ export function calculateSystemHealth(input: CalculateSystemHealthInput): System
         ? "UNKNOWN"
         : "HEALTHY";
 
+  const providerStates = [...(input.providerStates ?? [])].sort((a, b) => a.provider.localeCompare(b.provider));
+
   return {
     status,
     checks,
@@ -86,6 +98,7 @@ export function calculateSystemHealth(input: CalculateSystemHealthInput): System
     warnings: unique(warnings),
     degradedComponents,
     healthyComponents,
+    providerStates,
     generatedAt: now.toISOString(),
   };
 }

@@ -8,6 +8,7 @@ export const FAILURE_CATEGORIES = [
   "VALIDATION",
   "DATA_INTEGRITY",
   "RATE_LIMITED",
+  "CREDIT_LIMITED",
   "PROVIDER_UNAVAILABLE",
   "TIMEOUT",
   "DUPLICATE",
@@ -41,6 +42,7 @@ const RULES: Array<{ category: FailureCategory; pattern: RegExp; retryable: bool
   { category: "AUTHENTICATION", pattern: /auth(?:entication)?|unauthori[sz]ed|invalid (?:api )?key|401/i, retryable: false, message: "Authentication failed. Verify the configured internal credential or session.", action: "HUMAN_REVIEW" },
   { category: "AUTHORIZATION", pattern: /authori[sz]ation|forbidden|permission|capability|approval|403/i, retryable: false, message: "The operation is not permitted until the existing approval or capability gate passes.", action: "WAIT_FOR_APPROVAL" },
   { category: "RATE_LIMITED", pattern: /rate.?limit|429|too many requests/i, retryable: true, message: "The operation was rate limited. Retry only after the safe backoff boundary.", action: "BACKOFF" },
+  { category: "CREDIT_LIMITED", pattern: /credit|billing|subscription|payment required|http 402|\b402\b/i, retryable: false, message: "Provider credit or billing is unavailable. No retry or spend is allowed until the account is resolved.", action: "HUMAN_REVIEW" },
   { category: "TIMEOUT", pattern: /timeout|timed out|aborted|deadline|ETIMEDOUT/i, retryable: true, message: "The operation timed out. Retry only when idempotency and safety gates permit it.", action: "BACKOFF" },
   { category: "PROVIDER_UNAVAILABLE", pattern: /unavailable|connection refused|network|fetch failed|5\d\d/i, retryable: true, message: "A dependency is unavailable. No provider health is assumed from configuration alone.", action: "RETRY" },
   { category: "CONFIGURATION", pattern: /config(?:uration)?|missing env|not configured|no credentials|invalid configuration/i, retryable: false, message: "The component is not configured. No external action should be attempted.", action: "DISABLE_COMPONENT" },
@@ -80,6 +82,7 @@ export function determineRecoveryPolicy(input: RecoveryPolicyInput): RecoveryAct
   if (input.category === "VALIDATION") return input.hasValidation ? "REVALIDATE" : "RESEARCH_AGAIN";
   if (input.category === "CONFIGURATION" || input.category === "PROVIDER_UNAVAILABLE") return "DISABLE_COMPONENT";
   if (input.category === "RATE_LIMITED" || input.category === "TIMEOUT") return "BACKOFF";
+  if (input.category === "CREDIT_LIMITED") return "HUMAN_REVIEW";
   if (input.category === "TRANSIENT" && input.idempotencyKnown && input.capabilityAvailable !== false) return "RETRY";
   if (input.category === "TRANSIENT") return "HUMAN_REVIEW";
   return input.retryable ? "RETRY" : "HUMAN_REVIEW";
