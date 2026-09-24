@@ -7,6 +7,7 @@ import { Badge, Card, CardHeader, Button, statusBadgeClass } from "@/components/
 import { formatRelativeTime } from "@/lib/format";
 import { SystemHealthPanel } from "@/components/SystemHealthPanel";
 import { OperationalStatusPanel } from "@/components/OperationalStatusPanel";
+import { LaunchReadinessPanel } from "@/components/LaunchReadinessPanel";
 
 function runStatusBadgeClass(status: AgentRunRecord["status"]): string {
   switch (status) {
@@ -67,6 +68,7 @@ export default function AgentsPage() {
       <h1 className="text-2xl font-bold">AI Agents</h1>
       <SystemHealthPanel />
       <OperationalStatusPanel />
+      <LaunchReadinessPanel />
       <p className="text-sm text-slate-500">
         Architecture placeholders only. None are connected to live AI APIs. Persisted execution records
         (AgentRun) are shown per agent — recorded via the runs API, never invented.
