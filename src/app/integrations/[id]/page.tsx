@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { apiGet, apiSend } from "@/lib/http";
-import { Card, CardHeader } from "@/components/ui";
+import { Card, CardHeader, dataClassBadgeClass, dataClassLabel } from "@/components/ui";
 
 interface IntegrationSummary {
   name: string;
@@ -44,6 +44,32 @@ const STATUS_LABELS: Record<string, string> = {
   DISABLED: "Disabled",
 };
 
+interface TestActionDescriptor {
+  integration: string;
+  action: string;
+  capability: string;
+  taskType: string;
+  label: string;
+  objective: string;
+}
+
+interface TestExecutionResult {
+  integration: string;
+  action: string;
+  status: string;
+  executionId: string | null;
+  taskId: string;
+  artifactId: string | null;
+  dataClass: string | null;
+  durationMs: number | null;
+  error: string | null;
+  outputExcerpt: string | null;
+  message: string;
+  configured: boolean;
+  integrationStatus: string;
+  missingEnvVars: string[];
+}
+
 const STATUS_DOT: Record<string, string> = {
   HEALTHY: "bg-emerald-500",
   CONFIGURED: "bg-sky-500",
@@ -62,6 +88,10 @@ export default function IntegrationDetailPage() {
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(false);
   const [notFound, setNotFound] = useState(false);
+  const [testActions, setTestActions] = useState<TestActionDescriptor[]>([]);
+  const [selectedAction, setSelectedAction] = useState<string>("");
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<TestExecutionResult | null>(null);
 
   const load = useCallback(async () => {
     if (!name) return;
@@ -70,6 +100,9 @@ export default function IntegrationDetailPage() {
       setIntegration(data.integration);
       const exec = await apiGet<{ executions: IntegrationExecution[] }>(`/api/integrations/${name}/executions`);
       setExecutions(exec.executions);
+      const actions = await apiGet<{ actions: TestActionDescriptor[] }>(`/api/integrations/${name}/test-execution`);
+      setTestActions(actions.actions);
+      setSelectedAction((current) => current || (actions.actions[0]?.action ?? ""));
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to load integration";
       if (/not found/i.test(message)) setNotFound(true);
@@ -92,6 +125,25 @@ export default function IntegrationDetailPage() {
       setError(err instanceof Error ? err.message : "Health check failed");
     } finally {
       setChecking(false);
+    }
+  }
+
+  async function runTestExecution() {
+    if (!name) return;
+    setTesting(true);
+    setError(null);
+    try {
+      const requestId = `detail_${name}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`.slice(0, 64);
+      const data = await apiSend<TestExecutionResult>(`/api/integrations/${name}/test-execution`, "POST", {
+        action: selectedAction || undefined,
+        requestId,
+      });
+      setTestResult(data);
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Test execution failed");
+    } finally {
+      setTesting(false);
     }
   }
 
@@ -183,6 +235,86 @@ export default function IntegrationDetailPage() {
       </div>
 
       <Card>
+        <CardHeader
+          title="Test execution"
+          subtitle="Runs one real, allowlisted, zero-cost action with strict time/output limits"
+        />
+        <div className="space-y-3 px-5 py-4">
+          {testActions.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No safe test action is available for this integration.
+              {integration.isScaffold
+                ? " This is a scaffold — it has no real API integration yet, so no execution can succeed honestly."
+                : " Configure the provider first; scaffold and approval-class actions can never be tested."}
+            </p>
+          ) : (
+            <>
+              <label className="block text-sm text-slate-600">
+                Action
+                <select
+                  value={selectedAction}
+                  onChange={(event) => setSelectedAction(event.target.value)}
+                  className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-sm"
+                >
+                  {testActions.map((descriptor) => (
+                    <option key={descriptor.action} value={descriptor.action}>
+                      {descriptor.label} ({descriptor.action} · {descriptor.capability})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="text-xs text-slate-500">
+                The objective is a fixed deterministic probe — client input never becomes a provider
+                instruction. Publishing, messaging, campaigns, uploads and spending are never testable.
+              </p>
+              <button
+                type="button"
+                onClick={() => void runTestExecution()}
+                disabled={testing}
+                className="rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+              >
+                {testing ? "Running test execution…" : "Run test execution"}
+              </button>
+            </>
+          )}
+
+          {testResult && (
+            <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold">Result: {testResult.status}</span>
+                <span
+                  className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${dataClassBadgeClass(testResult.dataClass)}`}
+                >
+                  {dataClassLabel(testResult.dataClass)}
+                </span>
+                {testResult.durationMs !== null && (
+                  <span className="text-xs text-slate-500">{testResult.durationMs} ms</span>
+                )}
+                <span className="text-xs text-slate-500">{testResult.integrationStatus}</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-600">
+                {testResult.integration} · {testResult.action}
+                {testResult.executionId ? ` · execution ${testResult.executionId}` : ""}
+                {testResult.taskId ? ` · task ${testResult.taskId}` : ""}
+                {testResult.artifactId ? ` · artifact ${testResult.artifactId}` : ""}
+              </p>
+              {testResult.missingEnvVars.length > 0 && (
+                <p className="mt-1 text-xs text-amber-700">
+                  Missing configuration: {testResult.missingEnvVars.join(", ")} (names only)
+                </p>
+              )}
+              {testResult.error && <p className="mt-1 text-xs text-red-600">{testResult.error}</p>}
+              {testResult.outputExcerpt && (
+                <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded bg-white p-2 text-xs text-slate-700">
+                  {testResult.outputExcerpt}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+      </Card>
+
+      <Card>
         <CardHeader title="Recent executions" subtitle="Your tenant's external actions through this integration" />
         <div className="px-5 py-4">
           {executions.length === 0 ? (
@@ -197,6 +329,7 @@ export default function IntegrationDetailPage() {
                     <th className="py-2 pr-4">Status</th>
                     <th className="py-2 pr-4">Data class</th>
                     <th className="py-2 pr-4">Duration</th>
+                    <th className="py-2 pr-4">Task</th>
                     <th className="py-2">Error</th>
                   </tr>
                 </thead>
@@ -206,8 +339,15 @@ export default function IntegrationDetailPage() {
                       <td className="py-2 pr-4 text-slate-600">{new Date(execution.createdAt).toLocaleString()}</td>
                       <td className="py-2 pr-4 font-medium text-slate-800">{execution.action}</td>
                       <td className="py-2 pr-4 text-slate-600">{execution.status}</td>
-                      <td className="py-2 pr-4 text-slate-600">{execution.dataClass}</td>
+                      <td className="py-2 pr-4">
+                        <span
+                          className={`rounded border px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${dataClassBadgeClass(execution.dataClass)}`}
+                        >
+                          {dataClassLabel(execution.dataClass)}
+                        </span>
+                      </td>
                       <td className="py-2 pr-4 text-slate-600">{execution.durationMs} ms</td>
+                      <td className="py-2 pr-4 font-mono text-[11px] text-slate-500">{execution.taskId ?? "—"}</td>
                       <td className="py-2 text-red-600">{execution.error ?? "—"}</td>
                     </tr>
                   ))}
