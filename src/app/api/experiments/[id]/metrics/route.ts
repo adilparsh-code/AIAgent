@@ -4,8 +4,10 @@ import { apiError } from "@/lib/api-error";
 import { isDbUnavailableError } from "@/lib/db";
 import { validateMetricPayload, validateMetricRange } from "@/lib/server/metric-input";
 import { metricRepository } from "@/lib/server/repositories/metrics";
+import { experimentRepository } from "@/lib/server/repositories/experiments";
 import { orderChronologically } from "@/lib/metric-aggregation";
 import { MAX_ID_LENGTH } from "@/lib/server/experiment-input";
+import { logger } from "@/lib/server/logger";
 
 const MAX_BODY_BYTES = 8_192;
 
@@ -26,6 +28,11 @@ function safeId(value: string): string {
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   try {
     const user = await requireUser();
+    const id = safeId(params.id);
+    // Check ownership before payload validation so foreign resources remain an
+    // indistinguishable 404 and cannot be used as a validation oracle.
+    const owned = await experimentRepository.getById(id, user.id);
+    if (!owned) return NextResponse.json({ error: "Experiment not found" }, { status: 404 });
     const raw = await request.text();
     if (raw.length > MAX_BODY_BYTES) {
       return NextResponse.json({ error: "Request body too large" }, { status: 413 });
@@ -42,10 +49,16 @@ export async function POST(request: Request, { params }: { params: { id: string 
       return NextResponse.json({ error: errors.join("; ") || "Invalid payload" }, { status: 400 });
     }
 
-    const created = await metricRepository.createForOwner(safeId(params.id), user.id, data, user.id);
+    const created = await metricRepository.createForOwner(id, user.id, data, user.id);
     if (!created) {
       return NextResponse.json({ error: "Experiment not found" }, { status: 404 });
     }
+    logger.operationalEvent({
+      event: "METRIC_RECORDED",
+      safeMessage: `Metric recorded for experiment ${id} with data class ${created.dataClass}.`,
+      severity: "INFO",
+      dataClass: created.dataClass === "REAL_DATA" ? "REAL_DATA" : "ESTIMATED_DATA",
+    });
     return NextResponse.json(created, { status: 201 });
   } catch (error) {
     // Unique (experimentId, periodStart, periodEnd, source): the same source

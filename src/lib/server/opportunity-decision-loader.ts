@@ -69,6 +69,7 @@ type ExperimentRow = {
   decision: string | null;
   metricEvents: Array<{
     dataClass: string;
+    source: string;
     conversions: number | null;
     revenue: unknown;
     cost: unknown;
@@ -160,7 +161,7 @@ export async function loadOpportunityDecisions(
         metricEvents: {
           orderBy: { periodStart: "asc" },
           take: DECISION_LOAD_BOUNDS.MAX_METRICS_PER_EXPERIMENT,
-          select: { dataClass: true, conversions: true, revenue: true, cost: true, periodEnd: true },
+          select: { dataClass: true, source: true, conversions: true, revenue: true, cost: true, periodEnd: true },
         },
       },
     }),
@@ -256,7 +257,8 @@ export async function loadOpportunityDecisions(
       status: experiment.status,
       decision: experiment.decision,
       metrics: experiment.metricEvents.map((metric) => ({
-        dataClass: metric.dataClass,
+        // Missing source provenance makes a legacy REAL_DATA row non-real.
+        dataClass: metric.dataClass === "REAL_DATA" && metric.source.trim() ? "REAL_DATA" : "ESTIMATED_DATA",
         conversions: metric.conversions,
         revenue: metric.revenue === null ? null : toDecimal(metric.revenue),
         cost: metric.cost === null ? null : toDecimal(metric.cost),
@@ -303,8 +305,8 @@ export async function loadOpportunityDecisions(
     for (const experiment of opportunityExperiments) {
       for (const metric of experiment.metricEvents) {
         // SAMPLE_DATA / unknown classes are never counted as real evidence.
-        if (metric.dataClass === "REAL_DATA") realMetricPeriods += 1;
-        else if (metric.dataClass === "ESTIMATED_DATA") estimatedMetricPeriods += 1;
+        if (metric.dataClass === "REAL_DATA" && metric.source.trim()) realMetricPeriods += 1;
+        else estimatedMetricPeriods += 1;
         const end = metric.periodEnd instanceof Date ? metric.periodEnd : new Date(metric.periodEnd);
         if (Number.isFinite(end.getTime()) && (!lastMetricEnd || end.getTime() > lastMetricEnd.getTime())) {
           lastMetricEnd = end;

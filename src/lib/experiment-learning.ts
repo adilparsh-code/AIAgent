@@ -48,6 +48,30 @@ export interface ExperimentLearningContract {
   generatedAt: string;
 }
 
+export type OpportunityLearningSignal =
+  | "POSITIVE_SIGNAL"
+  | "NEGATIVE_SIGNAL"
+  | "MIXED_SIGNAL"
+  | "INSUFFICIENT_DATA"
+  | "NO_CHANGE"
+  | "CONTRADICTORY_SIGNAL"
+  | "BLOCKED";
+
+/** Map observed experiment outcomes to existing decision actions; no prediction. */
+export function mapLearningSignalToDecisionAction(
+  signal: OpportunityLearningSignal,
+): "IMPROVE_EXPERIMENT" | "HANDOFF_READY" | "RESEARCH_MORE" | "RECORD_MORE_DATA" | "HUMAN_REVIEW" | "REVIEW_CONFLICT" | "BLOCKED" {
+  switch (signal) {
+    case "POSITIVE_SIGNAL": return "HANDOFF_READY";
+    case "NEGATIVE_SIGNAL": return "IMPROVE_EXPERIMENT";
+    case "MIXED_SIGNAL": return "HUMAN_REVIEW";
+    case "INSUFFICIENT_DATA": return "RECORD_MORE_DATA";
+    case "NO_CHANGE": return "RECORD_MORE_DATA";
+    case "CONTRADICTORY_SIGNAL": return "REVIEW_CONFLICT";
+    case "BLOCKED": return "BLOCKED";
+  }
+}
+
 export type LearningSignalKey =
   | "POSITIVE_DEMAND_SIGNAL"
   | "NEGATIVE_DEMAND_SIGNAL"
@@ -305,6 +329,17 @@ export function deriveLearningSignals(input: {
 }
 
 /** Outcome roll-up for one experiment. */
+export function opportunityLearningSignalFromOutcome(
+  outcome: ExperimentLearningContract["outcome"],
+  contradiction: RankingAdjustment["contradiction"] = "NONE",
+): OpportunityLearningSignal {
+  if (contradiction === "MIXED_EXPERIMENT_EVIDENCE" || contradiction === "EXPERIMENT_CONTRADICTS_RESEARCH") return "CONTRADICTORY_SIGNAL";
+  if (outcome === "POSITIVE") return "POSITIVE_SIGNAL";
+  if (outcome === "NEGATIVE") return "NEGATIVE_SIGNAL";
+  if (outcome === "MIXED") return "MIXED_SIGNAL";
+  return "INSUFFICIENT_DATA";
+}
+
 export function outcomeFromSignals(signals: LearningSignal[]): ExperimentLearningContract["outcome"] {
   const insufficient = signals.some((s) => s.key === "INSUFFICIENT_EXPERIMENT_DATA");
   if (insufficient) return "INSUFFICIENT";

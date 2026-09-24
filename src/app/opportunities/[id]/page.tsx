@@ -14,6 +14,7 @@ import { OpportunityLearning } from "@/components/OpportunityLearning";
 import { ResearchHistoryIntelligence } from "@/components/ResearchHistoryIntelligence";
 import { OpportunityReadiness } from "@/components/OpportunityReadiness";
 import { OpportunityDecisionPanel } from "@/components/OpportunityDecisionPanel";
+import { OpportunityValidationPanel } from "@/components/OpportunityValidationPanel";
 import { formatRelativeTime } from "@/lib/format";
 
 export default function OpportunityDetailPage({ params }: { params: { id: string } }) {
@@ -255,6 +256,7 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
       {researchRun && <ResearchResultCard run={researchRun} />}
       {!isSample && <OpportunityReadiness opportunityId={params.id} />}
       {!isSample && <OpportunityDecisionPanel opportunityId={params.id} />}
+      {!isSample && <OpportunityValidationPanel opportunityId={params.id} />}
       {!isSample && <ResearchHistoryIntelligence opportunityId={params.id} />}
       {!isSample && <OpportunityLearning opportunityId={params.id} />}
       {researchHistory.length > 1 && (

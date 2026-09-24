@@ -151,6 +151,7 @@ describe.skipIf(!hasDb)("Phase 6B metric time series (real PostgreSQL)", () => {
           impressions: 1000,
           clicks: 30,
           cost: 50,
+          dataClass: "REAL_DATA",
           source: "meta-ads",
         },
       }),
@@ -176,6 +177,7 @@ describe.skipIf(!hasDb)("Phase 6B metric time series (real PostgreSQL)", () => {
           conversions: 0,
           revenue: 120.5,
           cost: 40,
+          dataClass: "REAL_DATA",
           source: "meta-ads",
         },
       }),
@@ -218,6 +220,7 @@ describe.skipIf(!hasDb)("Phase 6B metric time series (real PostgreSQL)", () => {
       conversions: 2,
       revenue: 90,
       cost: 30,
+      dataClass: "REAL_DATA",
     };
     const first = await createMetric(
       makeRequest(`http://localhost/api/experiments/${userBExperimentId}/metrics`, {

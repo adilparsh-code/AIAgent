@@ -79,6 +79,9 @@ export class PrismaMetricRepository {
 
   /** Unscoped append used by tests/services that already verified ownership. */
   async create(experimentId: string, input: ExperimentMetricInput, recordedBy: string | null): Promise<MetricRecordView> {
+    if (input.dataClass === "REAL_DATA" && !input.source.trim()) {
+      throw new Error("REAL_DATA metric requires a non-empty source provenance");
+    }
     const row = await getPrisma().experimentMetric.create({
       data: {
         experimentId,
@@ -147,6 +150,9 @@ export class PrismaMetricRepository {
     experimentId: string,
     inputs: Array<ExperimentMetricInput & { recordedBy?: string | null }>,
   ): Promise<number> {
+    if (inputs.some((input) => input.dataClass === "REAL_DATA" && !input.source.trim())) {
+      throw new Error("REAL_DATA metric requires a non-empty source provenance");
+    }
     const result = await getPrisma().experimentMetric.createMany({
       data: inputs.map((input) => ({
         experimentId,

@@ -81,7 +81,7 @@ export async function getOpportunityReadiness(
       metricEvents: {
         orderBy: { periodStart: "asc" },
         take: READINESS_POLICY.MAX_METRICS_PER_EXPERIMENT,
-        select: { dataClass: true, conversions: true, revenue: true, cost: true },
+        select: { dataClass: true, source: true, conversions: true, revenue: true, cost: true },
       },
     },
   });
@@ -114,9 +114,9 @@ export async function getOpportunityReadiness(
   const experimentInputs: ReadinessExperimentInput[] = experiments.map((experiment) => ({
     id: experiment.id,
     status: experiment.status,
-    decision: experiment.decision,
-    metrics: experiment.metricEvents.map((metric) => ({
-      dataClass: metric.dataClass,
+    decision: experiment.decision,      metrics: experiment.metricEvents.map((metric) => ({
+        // Missing source provenance makes a legacy REAL_DATA row non-real.
+        dataClass: metric.dataClass === "REAL_DATA" && metric.source.trim() ? "REAL_DATA" : "ESTIMATED_DATA",
       conversions: metric.conversions,
       revenue: metric.revenue === null ? null : Number(metric.revenue),
       cost: metric.cost === null ? null : Number(metric.cost),

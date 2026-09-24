@@ -20,6 +20,9 @@ type LoopResponse = {
   executionEligible: boolean;
   explanation: string[];
   dataClass: string;
+  queues: Record<string, string[]>;
+  limits: Record<string, number>;
+  observed: Record<string, number>;
   generatedAt: string;
 };
 
@@ -77,9 +80,22 @@ export function AutonomousOperatingLoopPanel() {
         <div className="rounded-md border p-3"><div className="text-xs text-slate-500">Safety / Approval</div><div className="mt-1 text-sm font-semibold">{data.requiredApproval ? "Approval required" : "No additional approval reported"}</div></div>
       </div>
       <div className="border-t border-slate-100 bg-slate-50 p-5"><div className="text-xs font-semibold uppercase tracking-wide text-slate-500">NEXT ACTION</div><p className="mt-1 text-base font-semibold">{data.nextAction}</p></div>
+      <div className="grid gap-3 border-t border-slate-100 p-5 sm:grid-cols-3 lg:grid-cols-6">
+        {Object.entries(data.queues).map(([queue, ids]) => (
+          <div key={queue} className="rounded-md border p-3">
+            <div className="text-xs text-slate-500">{queue.replaceAll("_", " ")}</div>
+            <div className="mt-1 text-lg font-semibold">{ids.length}</div>
+          </div>
+        ))}
+      </div>
       <div className="grid gap-4 border-t border-slate-100 p-5 lg:grid-cols-2">
         <div><h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected Opportunity</h4>{data.selectedOpportunity ? <div className="mt-2 rounded-md border p-3"><p className="font-semibold">{data.selectedOpportunity.opportunityId}</p><p className="text-sm text-slate-600">Queue: {data.selectedOpportunity.queue ?? "—"}</p><p className="mt-1 text-sm">Why selected: {data.selectedOpportunity.reason}</p>{data.selectedOpportunity.decision ? <p className="mt-1 text-xs text-slate-500">Current decision: {data.selectedOpportunity.decision.decision} · lifecycle: {data.selectedOpportunity.decision.lifecycleState}</p> : null}</div> : <p className="mt-2 text-sm text-slate-500">No opportunity is selected for the next operational action.</p>}</div>
         <div><h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Blockers</h4>{data.blockers.length === 0 ? <p className="mt-2 text-sm text-slate-500">None reported.</p> : <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-slate-700">{data.blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>}</div>
+      </div>
+      <div className="border-t border-slate-100 bg-slate-50 p-5 text-xs text-slate-600">
+        <span className="font-semibold uppercase tracking-wide text-slate-500">BOUNDED LIMITS</span>
+        <span className="ml-2">max cycle {data.limits.maxOpportunitiesPerCycle} · experiments {data.limits.maxConcurrentExperiments} · executions {data.limits.maxConcurrentExecutions} · retries {data.limits.maxRetries}</span>
+        <div className="mt-1">Observed: {Object.entries(data.observed).map(([key, value]) => `${key} ${value}`).join(" · ")}</div>
       </div>
       <div className="border-t border-slate-100 p-5"><h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">NEXT CYCLE</h4><p className="mt-1 text-sm text-slate-700">After this action, recompute the persisted decision and portfolio position. The loop only reports the next step.</p><ul className="mt-2 list-inside list-disc space-y-1 text-xs text-slate-500">{data.explanation.map((line) => <li key={line}>{line}</li>)}</ul></div>
     </Card>
