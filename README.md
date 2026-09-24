@@ -626,6 +626,58 @@ application evidence.**
   it cannot discover new evidence, and a stale/absent run simply means the
   stored data is old or missing, nothing more.
 
+## Phase 11 — Opportunity decision pipeline + next action
+
+The decision layer turns research intelligence, readiness, validation, experiment learning, and
+handoff/execution state into ONE deterministic operational answer: **what is the safest next step?**
+It is advisory orchestration logic — not a profitability prediction. It never claims an opportunity
+will make money, never overrides existing scores, and never performs an external side effect.
+
+```
+Research → Research Intelligence → Readiness → Decision → Next Action
+  → Validation / Experiment → Learning → Handoff → Execution
+```
+
+- **Decision engine** (`src/lib/opportunity-decision.ts`): composes the Phase 10 readiness engine
+  (never re-derives its rules) with persisted execution state (AgentTask WAITING_APPROVAL / BLOCKED /
+  RUNNING / COMPLETED) and handoff status. First decisive rule wins:
+
+  | Rule | Condition (persisted only) | Decision |
+  | --- | --- | --- |
+  | K | status REJECTED or halalStatus NOT_ALLOWED | `BLOCKED` |
+  | C/G | unresolved contradictions (validation signals or experiment REAL_DATA vs research) | `REVIEW_CONFLICT` |
+  | J | AgentTask BLOCKED or WAITING_APPROVAL | `HUMAN_REVIEW` |
+  | A | no completed research | `RESEARCH_MORE` |
+  | D | stale research (freshness threshold) | `VALIDATE` (+ refresh action) |
+  | B | evidence gaps from persisted validation | `RESEARCH_MORE` |
+  | D2 | research adequate, validation missing | `VALIDATE` |
+  | E/F | no experiment, or insufficient REAL_DATA / estimated-only | `RUN_EXPERIMENT` |
+  | H | all gates satisfied, handoff missing/unaccepted | `HANDOFF_READY` |
+  | I | handoff ACCEPTED/COMPLETED | `EXECUTION_READY` |
+
+  SAMPLE / ESTIMATED / SIMULATED metric data is NEVER treated as REAL_DATA (ignored entirely),
+  mirroring the readiness engine's honesty rules.
+- **Next action** (`src/lib/opportunity-next-action.ts`): exactly ONE recommended action per
+  decision, always citing the persisted state it resolves (`basis`). No LLM, no external API.
+- **Research cycle** (`src/lib/research-cycle.ts`): the reusable lifecycle
+  `DISCOVER → COLLECT → NORMALIZE → VALIDATE → CORRELATE → ASSESS → UPDATE INTELLIGENCE →
+  REASSESS READINESS`, positioned per run from persisted data. Future live providers plug in at
+  COLLECT (`STAGE_OWNERS` documents the owner of every stage); the decision architecture above it
+  does not change. No fake external research is implemented.
+- **Lifecycle** (`src/lib/opportunity-lifecycle.ts`): an advisory read-model derived from the same
+  persisted inputs as the decision (forward path DISCOVERED → … → LEARNED plus BLOCKED /
+  HUMAN_REVIEW / RESEARCH_CONFLICT / VALIDATION_CONFLICT / EXPERIMENT_INSUFFICIENT). The existing
+  `Opportunity.status` field remains the system of record and is never written by these modules.
+- **API**: `GET /api/opportunities/:id/decision` (`requireUser()`, owner-scoped, foreign and sample
+  opportunities return an indistinguishable 404, bounded queries, no external calls, deterministic
+  response, no sample leakage).
+- **UI**: `src/components/OpportunityDecisionPanel.tsx` on the opportunity detail page next to
+  readiness/research intelligence/learning: decision, confidence, readiness, lifecycle, blockers,
+  the four gap groups, the explanation trail, and the prominent NEXT ACTION. No fake progress
+  percentages, no marketing language, no revenue claims beyond persisted data.
+- **Security**: the decision engine is pure and advisory — it can neither publish, send, spend, nor
+  execute. Execution still runs exclusively through the Phase 7/9 approval + capability gates.
+
 ## Intentionally deferred
 
 - Real external API executions against paid/social providers (scaffold adapters stay honestly
