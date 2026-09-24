@@ -24,6 +24,24 @@ type LoopResponse = {
   limits: Record<string, number>;
   observed: Record<string, number>;
   generatedAt: string;
+  operations?: {
+    cycleId: string;
+    finalState: string;
+    stages: string[];
+    actionsConsidered: Array<{ actionType: string; target: { opportunityId: string; queue: string }; reason: string; riskSafetyStatus: string; provider: string | null; approvalRequirement: string }>;
+    actionsExecuted: Array<{ observation: string }>;
+    actionsSkipped: Array<{ state: string; observation: string }>;
+    blockers: string[];
+    failures: Array<{ component: string; safeMessage: string }>;
+    recoveryActions: string[];
+    learningSignals: string[];
+    nextRecommendedAction: string;
+    health: { status: string; blockingComponent: string | null; warnings: string[]; blockers: string[]; counts: Record<string, number>; providerStates: Array<{ provider: string; status: string; safeReason: string }> } | null;
+    events: Array<{ event: string; safeMessage: string; timestamp: string }>;
+    resourceUsage: Record<string, number>;
+    limits: Record<string, number>;
+    deduplication: { checked: number; duplicates: number };
+  } | null;
 };
 
 function stageLabel(stage: string): string {
@@ -80,6 +98,29 @@ export function AutonomousOperatingLoopPanel() {
         <div className="rounded-md border p-3"><div className="text-xs text-slate-500">Safety / Approval</div><div className="mt-1 text-sm font-semibold">{data.requiredApproval ? "Approval required" : "No additional approval reported"}</div></div>
       </div>
       <div className="border-t border-slate-100 bg-slate-50 p-5"><div className="text-xs font-semibold uppercase tracking-wide text-slate-500">NEXT ACTION</div><p className="mt-1 text-base font-semibold">{data.nextAction}</p></div>
+      {data.operations ? (
+        <div className="border-t border-slate-100 p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Autonomous Portfolio Operations</h4>
+            <Badge>{data.operations.finalState.replaceAll("_", " ")}</Badge>
+          </div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-md border p-3"><div className="text-xs text-slate-500">Portfolio health</div><div className="mt-1 font-semibold">{data.operations.health?.status ?? "UNKNOWN"}</div></div>
+            <div className="rounded-md border p-3"><div className="text-xs text-slate-500">Actions considered</div><div className="mt-1 text-lg font-semibold">{data.operations.actionsConsidered.length}</div></div>
+            <div className="rounded-md border p-3"><div className="text-xs text-slate-500">Executed / skipped</div><div className="mt-1 text-lg font-semibold">{data.operations.actionsExecuted.length} / {data.operations.actionsSkipped.length}</div></div>
+            <div className="rounded-md border p-3"><div className="text-xs text-slate-500">Provider calls</div><div className="mt-1 text-lg font-semibold">{data.operations.resourceUsage.providerCalls}</div></div>
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div><h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Planned actions</h5>{data.operations.actionsConsidered.length === 0 ? <p className="mt-2 text-sm text-slate-500">No action is currently selectable.</p> : <ul className="mt-2 space-y-2">{data.operations.actionsConsidered.map((action) => <li key={`${action.target.opportunityId}-${action.actionType}`} className="rounded-md border p-3 text-sm"><div className="flex flex-wrap justify-between gap-2"><span className="font-semibold">{action.actionType.replaceAll("_", " ")}</span><span className="text-xs text-slate-500">{action.riskSafetyStatus}</span></div><p className="mt-1 text-slate-600">{action.target.opportunityId} · {action.reason}</p><p className="mt-1 text-xs text-slate-500">Provider: {action.provider ?? "internal"} · Approval: {action.approvalRequirement}</p></li>)}</ul>}</div>
+            <div><h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Blockers and recovery</h5>{data.operations.blockers.length === 0 && data.operations.failures.length === 0 ? <p className="mt-2 text-sm text-slate-500">No current blockers reported.</p> : <ul className="mt-2 list-inside list-disc space-y-1 text-sm text-slate-700">{data.operations.blockers.map((item) => <li key={item}>{item}</li>)}{data.operations.failures.map((item) => <li key={`${item.component}-${item.safeMessage}`}>{item.component}: {item.safeMessage}</li>)}</ul>}<p className="mt-2 text-xs text-slate-500">Recovery: {data.operations.recoveryActions.length ? data.operations.recoveryActions.join(", ") : "None reported"}</p></div>
+          </div>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <div><h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Provider health</h5>{data.operations.health?.providerStates.length ? <ul className="mt-2 space-y-1 text-sm">{data.operations.health.providerStates.map((provider) => <li key={provider.provider}><span className="font-semibold">{provider.provider}</span>: {provider.status} — {provider.safeReason}</li>)}</ul> : <p className="mt-2 text-sm text-slate-500">No provider states reported.</p>}</div>
+            <div><h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Learning and next cycle</h5><p className="mt-2 text-sm">Signals: {data.operations.learningSignals.join(", ") || "None"}</p><p className="mt-1 text-sm font-semibold">{data.operations.nextRecommendedAction}</p><p className="mt-1 text-xs text-slate-500">Duplicate checks: {data.operations.deduplication.checked}; duplicates: {data.operations.deduplication.duplicates}</p></div>
+          </div>
+          <div className="mt-4 border-t border-slate-100 pt-3"><h5 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Operational events</h5><ul className="mt-2 space-y-1 text-xs text-slate-600">{data.operations.events.map((event) => <li key={`${event.event}-${event.timestamp}`}><span className="font-semibold">{event.event}</span>: {event.safeMessage}</li>)}</ul></div>
+        </div>
+      ) : null}
       <div className="grid gap-3 border-t border-slate-100 p-5 sm:grid-cols-3 lg:grid-cols-6">
         {Object.entries(data.queues).map(([queue, ids]) => (
           <div key={queue} className="rounded-md border p-3">

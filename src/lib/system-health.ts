@@ -24,6 +24,7 @@ export const SYSTEM_HEALTH_COMPONENTS = [
   "EXECUTION",
   "AGENT_RUNTIME",
   "INTEGRATION_REGISTRY",
+  "PORTFOLIO_OPERATIONS",
 ] as const;
 export type SystemHealthComponent = (typeof SYSTEM_HEALTH_COMPONENTS)[number];
 

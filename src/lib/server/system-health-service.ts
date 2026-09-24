@@ -35,6 +35,7 @@ export async function getSystemHealth(ownerId: string, now = new Date()): Promis
     ["HANDOFF", "Handoff processing remains governed by existing eligibility gates."],
     ["EXECUTION", "Execution remains governed by ownership, approval, capability, and idempotency gates."],
     ["AGENT_RUNTIME", "Agent runtime is available; no external action was started."],
+    ["PORTFOLIO_OPERATIONS", "Bounded portfolio operations planning is available; execution remains gated by the existing contracts."],
   ] as const) checks.push(makeHealthCheck({ component, status: "HEALTHY", message, dataClass: "REAL_DATA", now }));
   const registry = getIntegrationRegistry();
   const providerStates = (await getProviderActivations()).map((activation) => ({
