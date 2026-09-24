@@ -27,6 +27,11 @@ export const AUTONOMOUS_OPERATING_LOOP_STAGES = [
   "MEASUREMENT",
   "REASSESSMENT",
   "PORTFOLIO_REASSESSMENT",
+  "OBSERVE",
+  "ASSESS",
+  "SELECT",
+  "RECOVER",
+  "COMPLETE",
 ] as const;
 export type AutonomousOperatingLoopStage = (typeof AUTONOMOUS_OPERATING_LOOP_STAGES)[number];
 
