@@ -885,3 +885,39 @@ executed automatically.
 
 This phase prepares live provider activation. It does not execute external
 actions automatically.
+
+## Phase 16 — Pre-Live Launch Gate
+
+Phase 16 adds an API-independent pre-live launch gate and end-to-end readiness
+snapshot. It audits the existing discovery → research → evidence → validation
+→ intelligence → readiness → decision → portfolio → experiment → operating loop
+→ learning → handoff → execution → measurement → reassessment lifecycle without
+creating a second source of truth.
+
+- **Internal readiness:** `LaunchReadiness` reports the engineering score and
+  15 deterministic gates. The score is not revenue, profitability, market, or
+  business-success probability.
+- **Provider readiness:** provider activation remains `PENDING` until a real
+  server-side configuration and persisted health check exist. A configured
+  provider is never marked healthy by configuration alone.
+- **Live testing:** `GATE_15_LIVE_TEST` remains `PENDING` in Phase 16. The
+  system does not claim to be live and does not make provider calls.
+- **Security gates:** authentication, owner isolation, approval, capability,
+  integration permission, execution state, publishing, messaging, campaign,
+  and spending boundaries remain enforced by the existing architecture.
+- **Data-class rules:** `REAL_DATA`, `SAMPLE_DATA`, `ESTIMATED_DATA`, and
+  `UNKNOWN` remain distinct through measurement, learning, health, and launch
+  readiness. Non-real data is never upgraded to real-world validation.
+- **Failure handling:** provider, database, validation, experiment, execution,
+  duplicate, approval, timeout, rate-limit, and credit failures flow through
+  classification, recovery recommendations, safe operational events, and
+  bounded health/operations reporting.
+- **API and UI:** authenticated `GET /api/system/launch-readiness` and
+  `LaunchReadinessPanel` on the Agents control page show every gate, blockers,
+  warnings, and pending provider/live-test states.
+- **Saturday activation sequence:** the exact manual order is documented in
+  `docs/live-activation-runbook.md`, including read-only tests, safe write
+  tests, approval-required tests, and forbidden automatic actions.
+
+Phase 16 provides a pre-live launch gate. It does not claim the system is LIVE
+and does not execute external actions automatically.
