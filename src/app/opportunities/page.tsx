@@ -6,6 +6,7 @@ import { opportunityRepository } from "@/lib/repositories";
 import type { Opportunity } from "@/lib/types";
 import { Badge, Card, Button, statusBadgeClass } from "@/components/ui";
 import { OpportunityPortfolioPanel } from "@/components/OpportunityPortfolioPanel";
+import { AutonomousOperatingLoopPanel } from "@/components/AutonomousOperatingLoopPanel";
 
 export default function OpportunitiesPage() {
   const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
@@ -50,6 +51,7 @@ export default function OpportunitiesPage() {
         </Link>
       </div>
       <p className="text-sm text-slate-500">Sample data is marked with a &lsquo;Sample&rsquo; badge. All scores are recalculated automatically when fields change.</p>
+      <AutonomousOperatingLoopPanel />
       <OpportunityPortfolioPanel />
       {loading ? (
         <Card className="p-8 text-center">

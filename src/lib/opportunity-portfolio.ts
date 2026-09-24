@@ -131,6 +131,8 @@ export interface PortfolioOpportunityInput {
   isBlocked: boolean;
   /** Latest persisted research run status ("FAILED" raises a warning). */
   latestResearchRunStatus: string | null;
+  /** True when a linked task still requires explicit approval. */
+  taskApprovalPending?: boolean;
 }
 
 export interface EvidenceQualitySummary {

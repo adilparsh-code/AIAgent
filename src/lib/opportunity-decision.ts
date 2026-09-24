@@ -110,6 +110,8 @@ export interface OpportunityDecision {
   decisionInputs: DecisionInputs;
   /** Derived lifecycle position (see opportunity-lifecycle.ts). */
   lifecycleState: string;
+  /** True when persisted experiment decisions make reassessment possible. */
+  learningSignal?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -396,6 +398,7 @@ export function calculateOpportunityDecision(
     generatedAt: now.toISOString(),
     decisionInputs,
     lifecycleState: deriveLifecycleState(decision, readiness, execution, experiments.length),
+    learningSignal: experiments.some((experiment) => experiment.decision !== null),
   };
 }
 
