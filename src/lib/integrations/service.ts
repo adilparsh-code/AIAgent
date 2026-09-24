@@ -53,7 +53,9 @@ export async function listIntegrationSummaries(): Promise<IntegrationSummary[]> 
   const prisma = getPrisma();
   let healthRows: Array<{ adapterName: string; status: string; lastCheckedAt: Date | null; lastError: string | null }> = [];
   try {
-    healthRows = await prisma.integrationHealth.findMany();
+    // The built-in registry is bounded; cap the persisted lookup as a defensive
+    // boundary for future registry growth and owner-independent health pages.
+    healthRows = await prisma.integrationHealth.findMany({ take: 32 });
   } catch (error) {
     if (!isDbUnavailableError(error)) throw error;
     // Without a DB the UI can still show configuration status honestly.

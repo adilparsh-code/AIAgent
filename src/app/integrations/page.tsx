@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiGet, apiSend } from "@/lib/http";
 import { Card, CardHeader, dataClassBadgeClass, dataClassLabel } from "@/components/ui";
+import { ProviderActivationPanel } from "@/components/ProviderActivationPanel";
 
 interface IntegrationSummary {
   name: string;
@@ -121,6 +122,8 @@ export default function IntegrationsPage() {
           Secret values never leave the server; only variable names are shown.
         </p>
       </div>
+
+      <ProviderActivationPanel />
 
       {error && (
         <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">

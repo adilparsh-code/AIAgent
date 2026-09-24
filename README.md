@@ -846,3 +846,42 @@ rather than a new persistence table, and no uptime, fake percentage, or invented
 measurement is reported.
 
 This phase provides observability and recovery decisions. It does not execute external actions automatically.
+
+## Phase 15 — Live Provider Activation Readiness
+
+Phase 15 audits the existing integration contracts and adds deterministic,
+API-independent activation metadata for providers already represented in the
+repository. It does not require credentials, call providers, or change the
+provider architecture.
+
+- **Activation states:** `NOT_CONFIGURED`, `CONFIGURED`,
+  `READY_FOR_HEALTH_CHECK`, `HEALTHY`, `DEGRADED`, `AUTH_FAILED`,
+  `CREDIT_LIMITED`, `RATE_LIMITED`, `UNAVAILABLE`, and `DISABLED`.
+  Configuration alone never produces `HEALTHY`.
+- **Checklist and matrix:** `src/lib/integrations/provider-checklist.ts` and
+  `src/lib/integrations/provider-capability-matrix.ts` reuse the existing
+  adapter capability, permission, and approval contracts. Dangerous publish,
+  messaging, campaign, and spend capabilities remain approval-gated.
+- **Safe plan:** `src/lib/integrations/live-test-plan.ts` returns a bounded
+  activation order and stops at `LIVE_WRITE_TEST_REQUIRES_APPROVAL` for
+  write-side capabilities. It performs no external action.
+- **Credit handling:** billing/credit failures map to `CREDIT_LIMITED` and are
+  non-retryable; a configured provider with a credit issue is not healthy or
+  executable until resolved.
+- **API and UI:** authenticated `GET /api/integrations/activation` and the
+  `/integrations` activation panel expose safe metadata, variable names,
+  capabilities, and next steps only. No secret values or external probes.
+- **Health integration:** the Phase 14 health snapshot now includes safe
+  provider activation states and does not report configured-but-unchecked
+  providers as healthy.
+
+The live activation order is documented in `docs/environment.md`: configure
+server-side, verify secret isolation, run and persist a real health check,
+perform a minimal safe read/search test through existing execution gates,
+persist `IntegrationExecution`, normalize/classify the result, bridge only
+measurable `REAL_DATA` to `ExperimentMetric`, verify operational events and
+approval gates, then run an end-to-end test. Write-side capabilities are never
+executed automatically.
+
+This phase prepares live provider activation. It does not execute external
+actions automatically.

@@ -192,6 +192,7 @@ export function buildIdempotencyKey(parts: {
 /** Error classifier: maps transport/API errors to result statuses. */
 export type ErrorClass =
   | "AUTH" // 401/403 — do not retry, likely needs credential attention
+  | "CREDIT" // 402 or billing/credit failure — do not retry or spend
   | "RATE_LIMIT" // 429 — backoff, do not hammer
   | "TIMEOUT" // aborted by deadline
   | "SERVER" // 5xx — retryable with backoff
@@ -201,6 +202,7 @@ export type ErrorClass =
 
 export function classifyHttpError(status: number | null, message?: string): ErrorClass {
   if (message && /timed? ?out|aborted/i.test(message)) return "TIMEOUT";
+  if (status === 402 || (message && /(?:credit|billing|subscription|payment required|no credits)/i.test(message))) return "CREDIT";
   if (status === 401 || status === 403) return "AUTH";
   if (status === 429) return "RATE_LIMIT";
   if (status !== null && status >= 500) return "SERVER";
@@ -214,6 +216,8 @@ export function errorClassToStatus(errorClass: ErrorClass): ExecutionResult["sta
   switch (errorClass) {
     case "AUTH":
       return "AUTH_FAILED";
+    case "CREDIT":
+      return "FAILED";
     case "RATE_LIMIT":
       return "RATE_LIMITED";
     case "TIMEOUT":

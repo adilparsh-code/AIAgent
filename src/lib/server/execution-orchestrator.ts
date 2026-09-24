@@ -155,6 +155,7 @@ type GateOutcome =
 
 function classifyIntegrationFailure(message: string): ExecutionErrorClass {
   const m = message.toLowerCase();
+  if (m.includes("credit") || m.includes("billing") || m.includes("subscription") || m.includes("payment required") || m.includes("http 402") || m.includes(" 402")) return "CREDIT";
   if (m.includes("auth") || m.includes("unauthorized") || m.includes("forbidden") || m.includes("401") || m.includes("403")) return "AUTH";
   if (m.includes("rate limit") || m.includes("429")) return "RATE_LIMIT";
   if (m.includes("timed out") || m.includes("timeout") || m.includes("abort")) return "TIMEOUT";
