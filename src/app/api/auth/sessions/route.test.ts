@@ -78,6 +78,8 @@ describe("auth sessions route", () => {
       user: { id: "user-a", email: "a@example.com", name: "A", role: "USER", status: "ACTIVE" },
     });
 
+    mocks.revokeUserSession.mockClear();
+
     const { DELETE } = await import("@/app/api/auth/sessions/route");
     const response = await DELETE(
       new Request("http://localhost/api/auth/sessions", {
