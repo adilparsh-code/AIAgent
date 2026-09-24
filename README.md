@@ -405,6 +405,70 @@ Phase 6A authentication is extended with user-visible session management without
 - **Security:** session tokens and hashes never appear in API responses, localStorage, query strings, client bundles, or logs.
 - **Tests:** route-level tests cover authentication, safe metadata, single-session revocation, current-session protection, revoke-all semantics, cross-user isolation, and mock isolation.
 
+## Phase 8 — Real-world integrations + execution adapters
+
+A provider-agnostic integration framework connects AIAgent to external services through safe,
+auditable adapters — incrementally, and without pretending any connection exists before one does:
+
+- **Integration contract** (`src/lib/integrations/contract.ts`): types (AI_PROVIDER, RESEARCH,
+  SOCIAL, CONTENT, AFFILIATE, MARKETPLACE, ANALYTICS, EMAIL, STORAGE, PAYMENT), statuses
+  (NOT_CONFIGURED / CONFIGURED / HEALTHY / DEGRADED / AUTH_FAILED / FAILED / DISABLED), capabilities
+  (READ_DATA, SEARCH, CREATE_DRAFT, UPLOAD, PUBLISH, SEND_MESSAGE, CREATE_CAMPAIGN, SPEND_MONEY),
+  a common `ExecutionResult` shape, HTTP error classification, credential redaction, and an
+  untrusted-content wrapper for prompt-injection defense.
+- **Adapters actually implemented** (real probes, real executions):
+  - `sambanova` (AI_PROVIDER) — OpenAI-compatible chat completions over plain fetch; health check
+    performs a real 1-token authenticated completion. Without `SAMBANOVA_API_KEY` it reports
+    `NOT_CONFIGURED` and `execute()` returns `UNAVAILABLE` — output is never fabricated. Usage
+    metadata is echoed only when the provider returns it; estimated cost is never invented.
+  - `brave-search` (RESEARCH) — real `GET /res/v1/web/search?q=test&count=1` health probe;
+    `SEARCH_WEB` action. 401/403 → AUTH_FAILED, 429 → DEGRADED.
+  - `reddit` (RESEARCH) — public search endpoint (no key); `SEARCH_POSTS` action.
+  - `google-trends` (RESEARCH) — SerpApi `engine=google_trends` probe; `SEARCH_TRENDS` action.
+  The Phase 1 evidence architecture remains the only path that produces research Evidence;
+  these adapters add health/status visibility without touching the orchestrator.
+- **Scaffolded integrations** (registry entries exist; honestly inert until real API code is
+  written): `pinterest`, `youtube`, `affiliate-network`, `marketplace`, `analytics-platform`.
+  Even with env vars present they never claim more than CONFIGURED, and `execute()` returns
+  BLOCKED ("not implemented") — never a fake success. PUBLISH/SEND/SPEND capabilities are
+  intentionally NOT granted to scaffolds.
+- **Capability permissions**: task-type → action → adapter → capability is enforced server-side
+  (`permissions.ts`). PUBLISH / SEND_MESSAGE / CREATE_CAMPAIGN / SPEND_MONEY always require
+  explicit owner approval (no SAFE_AUTOMATED bypass in Phase 8); READ_DATA/SEARCH run tenant-scoped
+  without approval. Current mappings carry only safe capabilities.
+- **Execution bridge**: AgentTask → permission decision → approval gate (`WAITING_APPROVAL`)
+  → bounded retries (retryable classes only: SERVER/NETWORK/RATE_LIMIT) → adapter → audited
+  result. Idempotency: an already-succeeded (adapter, action, task) combination is skipped;
+  duplicate metric ingestion fails safe (original measurement preserved).
+- **Metrics ingestion**: measurable provider output maps into the Phase 6B `ExperimentMetric`
+  table as `REAL_DATA` with `source = adapter-name`; missing metrics stay NULL (never zero),
+  duplicates are rejected by the existing unique constraint, and history is never overwritten.
+- **Secrets**: resolved server-side only (`process.env`); never stored in Prisma models,
+  localStorage, URLs, logs, or API responses. Only env var NAMES and presence are exposed.
+  Error messages and audit rows are redacted (`sanitizeErrorMessage`).
+- **Persistence** (`20260923160000_phase8_integration_framework`, additive):
+  `IntegrationHealth` (last real check per adapter, upserted) and `IntegrationExecution`
+  (append-only audit: who/what/when/duration/sanitized error).
+- **APIs** (all authenticated): `GET /api/integrations`, `GET /api/integrations/:id`,
+  `POST /api/integrations/:id/health` (runs a real check and persists it),
+  `GET /api/integrations/:id/executions` (owner-scoped).
+- **UI**: `/integrations` dashboard with status dots, capabilities, missing env var names, and
+  per-integration health-check buttons; detail view with configuration guidance (names only),
+  last check/error, and recent executions. Env docs: see the table below.
+
+### Integration environment variables (server-side only; names in `.env.example`)
+
+| Provider | Variable | Purpose | Health-check behavior | Type |
+| --- | --- | --- | --- | --- |
+| Brave Search | `BRAVE_SEARCH_API_KEY` | Web search research | Real search API probe; READ/SEARCH, no approval needed | RESEARCH (live adapter) |
+| SerpApi (Google Trends) | `SERPAPI_API_KEY` | Trends signals | Real engine probe; READ/SEARCH, no approval needed | RESEARCH (live adapter) |
+| Reddit | — (public) | Community/pain-point signals | Real public-endpoint probe | RESEARCH (live adapter) |
+| SambaNova | `SAMBANOVA_API_KEY` (+ optional `SAMBANOVA_MODEL`, `SAMBANOVA_BASE_URL`, `AI_PROVIDER_ENV`) | LLM drafts/analysis for agent tasks | Real 1-token authenticated completion; CREATE_DRAFT only | AI_PROVIDER (live adapter) |
+| Pinterest / YouTube / affiliate / marketplace / analytics | see `.env.example` comments | Future publishing/reporting integrations | Scaffold only: reports NOT_CONFIGURED/CONFIGURED, executes nothing | scaffold |
+
+`AI_PROVIDER_ENV` / `RESEARCH_PROVIDER_ENV` label the provider environment as TEST or LIVE so test
+configuration is always distinguishable from production.
+
 ## Intentionally deferred
 
 - Autonomous agent execution (AgentRun rows exist for audit; no agent logic runs yet).

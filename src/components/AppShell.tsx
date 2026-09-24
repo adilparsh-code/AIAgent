@@ -18,6 +18,7 @@ import {
   X,
   ArrowRightLeft,
   LogOut,
+  Plug,
 } from "lucide-react";
 
 const NAV = [
@@ -29,6 +30,7 @@ const NAV = [
   { title: "Products", href: "/products", icon: Package },
   { title: "Revenue", href: "/revenue", icon: DollarSign },
   { title: "AI Agents", href: "/agents", icon: Bot },
+  { title: "Integrations", href: "/integrations", icon: Plug },
   { title: "Settings", href: "/settings", icon: Settings },
 ];
 

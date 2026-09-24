@@ -52,4 +52,16 @@ export const logger = {
   discoveryFailed(runId: string, errors: string[]) {
     emit("error", "discovery.failed", { runId, errors });
   },
+  // Phase 8 — integration lifecycle. Only names/statuses/error summaries;
+  // never env values, API keys, tokens, or connection strings.
+  integrationHealthChecked(adapterName: string, status: string, error: string | null) {
+    const level: LogLevel = status === "HEALTHY" || status === "CONFIGURED" || status === "NOT_CONFIGURED" ? "info" : "warn";
+    emit(level, "integration.health_checked", { adapterName, status, error });
+  },
+  integrationExecuted(adapterName: string, action: string, status: string, durationMs: number, ownerId: string) {
+    emit("info", "integration.executed", { adapterName, action, status, durationMs, ownerId });
+  },
+  integrationApprovalRequired(adapterName: string, action: string, capability: string, ownerId: string) {
+    emit("warn", "integration.approval_required", { adapterName, action, capability, ownerId });
+  },
 };
