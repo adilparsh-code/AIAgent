@@ -1,4 +1,4 @@
-# AI Income Lab — AIAgent (Phase 5 complete)
+# AI Income Lab — AIAgent (Phases 1–26)
 
 Discover, validate, build, publish, measure, earn, and scale halal online income opportunities.
 
@@ -965,3 +965,207 @@ creating a second source of truth.
 
 Phase 16 provides a pre-live launch gate. It does not claim the system is LIVE
 and does not execute external actions automatically.
+
+## Phase 18 — Autonomous Execution & Feedback Bridge
+
+Phase 18 connects the experiment layer to the execution layer and prepares the
+feedback bridge:
+
+- **Execution → measurement linkage:** agent executions for an opportunity's
+  experiment flow through the existing execution repository and orchestrator;
+  every execution is idempotent (unique idempotency key) and approval-gated.
+- **Feedback contract (prepared):** the provider-neutral
+  `ExternalFeedbackAdapter` boundary exists with truthful statuses
+  (`HEALTHY`, `NOT_CONFIGURED`, `UNAVAILABLE`, `AUTH_FAILED`, `DISABLED`,
+  `FAILED`). With no adapter configured, ingestion reports `NOT_CONFIGURED`
+  and persists nothing.
+- **REAL_DATA provenance:** metrics flowing into the experiment layer keep
+  their data class end to end; `REAL_DATA` requires an explicit source.
+
+Status: IMPLEMENTED / TEST-VERIFIED. Live execution and external feedback
+remain NOT VERIFIED (no credentials/adapter configured).
+
+## Phase 19 — Autonomous Opportunity Execution Loop
+
+Phase 19 adds the bounded opportunity operating loop:
+
+- OBSERVE → ASSESS → SELECT → ACTION → RECOVER/REASSESS cycle with
+  deterministic queues and explicit reasons.
+- `PORTFOLIO_CYCLE_LIMITS` bound experiments, executions, research runs, and
+  retries per cycle; the controller defers rather than overruns.
+- Approval gates remain mandatory; `WAITING_APPROVAL` and `BLOCKED` tasks are
+  observed as persisted facts, never overridden.
+
+Status: IMPLEMENTED / TEST-VERIFIED. Autonomous execution of real external
+actions remains NOT VERIFIED (requires provider + approval).
+
+## Phase 20 — Autonomous Portfolio Operations
+
+Phase 20 composes the operating loop with portfolio intelligence:
+
+- Portfolio-level health, circuit breaker, and recovery policy are reused;
+  the operating loop never bypasses them.
+- Learning-aware decisions use the existing Phase 6C/22 learning services;
+  no second ranking system was added.
+- Operational events record observed state with sanitized logging.
+
+Status: IMPLEMENTED / TEST-VERIFIED. Unattended real-world operation remains
+NOT VERIFIED by design (GATE_15_LIVE_TEST stays PENDING until a real live
+provider test is executed).
+
+## Phase 21 — External Feedback Bridge
+
+Phase 21 finalizes the external feedback boundary:
+
+- `ExternalFeedbackAdapter` + ingestion service: adapters must pass a real
+  HEALTHY health check before any fetch; configuration alone is never health.
+- Ingestion is owner-scoped and idempotent (duplicate external events are
+  rejected), flows through the ExperimentMetric model, and preserves
+  `REAL_DATA`/`ESTIMATED_DATA`/`NOT_MEASURED` semantics.
+- `POST /api/experiments/:id/feedback/ingest` truthfully returns 503
+  `NOT_CONFIGURED` until an owner-configured adapter is injected server-side.
+- No external feedback provider is currently configured: the boundary is
+  architecturally complete, the integration is NOT CONFIGURED (by design,
+  awaiting a chosen provider + credentials).
+
+Status: IMPLEMENTED / TEST-VERIFIED. External feedback data flow: NOT
+CONFIGURED (requires a real adapter + provider credentials).
+
+## Phase 22 — Closed-Loop Income Intelligence
+
+Phase 22 closes the measurement → learning → reassessment → reprioritization
+loop on real measurements only:
+
+- Feedback aggregation and learning run on persisted ExperimentMetric rows;
+  missing data stays `NOT_MEASURED`, never zero.
+- `rerankOpportunities` is deterministic and idempotent: scores recompute from
+  the research base score + bounded experiment delta, clamped to [0, 100], and
+  changes are persisted as append-only RankingSnapshot rows.
+- Contradictions and insufficient-data states are surfaced honestly; no
+  fabricated revenue, users, conversions, or provider responses.
+
+Status: IMPLEMENTED / TEST-VERIFIED. Learning on real production data remains
+NOT VERIFIED (requires real measurements from a real experiment).
+
+## Phase 23 — Autonomous Growth & Experiment Portfolio
+
+Phase 23 adds a bounded growth read-model over the existing systems:
+
+- `GET /api/growth/portfolio` + `/growth` UI compose the existing portfolio
+  intelligence, Phase 19/20 operating controller, and Phase 22 closed loop —
+  no new scoring system (existing prioritization weights stay authoritative).
+- Capacity observes the SAME limits the controller enforces
+  (`PORTFOLIO_CYCLE_LIMITS`: max 3 experiments, 2 executions, 2 research runs)
+  with AVAILABLE / AT_CAPACITY / STARVED / BLOCKED states.
+- Runaway-signal detection (RETRY_EXHAUSTED, UNMEASURED_BACKLOG,
+  ESTIMATED_ONLY_DATA) is advisory and derived from persisted facts only.
+- Bounded owner-scoped reads (≤50 opportunities, ≤100 experiments, ≤200 metric
+  rows, ≤100 tasks); sample rows always excluded.
+
+Status: IMPLEMENTED / TEST-VERIFIED (13 engine tests).
+
+## Phase 24 — Production Autonomous Income Platform Integration
+
+Phase 24 adds full-lifecycle production visibility:
+
+- `GET /api/system/platform` + `/platform` UI report the 13 lifecycle stages
+  DISCOVER → RESEARCH → VERIFY → VALIDATE → DECIDE → SELECT → EXPERIMENT →
+  EXECUTE → MEASURE → LEARN → REASSESS → GROW → FEEDBACK, mapping each to the
+  existing SystemHealth components and persisted counts.
+- 13 fail-closed readiness gates; PENDING is never considered HEALTHY.
+- The snapshot carries an explicit `unverifiedInProduction` list — production
+  reality (live providers, real data, real execution) is NOT VERIFIED and is
+  reported as such rather than assumed.
+
+Status: IMPLEMENTED / TEST-VERIFIED (13 engine tests). Production reality:
+NOT VERIFIED — see Phase 25/26 below.
+
+## Phase 25 — Production Activation & First Real Loop
+
+Phase 25 activates the existing architecture without weakening any fail-closed
+behavior. Implemented:
+
+- **CI lint:** `.github/workflows/ci.yml` now runs `npm run lint` explicitly
+  (previously typecheck/test/build only; lint must not rely on build).
+- **Deployment readiness endpoint:** unauthenticated
+  `GET /api/system/readiness` verifies database connectivity (`SELECT 1`),
+  reports migration presence, and returns an honest 503 when the database is
+  unreachable — no secrets, no user data, no provider status leakage.
+- **Deployment configuration:** the repository keeps the existing
+  Vercel-compatible Next.js + PostgreSQL architecture (`next build`,
+  `prisma migrate deploy`, `DATABASE_URL`). No new infrastructure was added.
+  Production deployment itself has NOT been performed in this environment:
+  **NOT VERIFIED — DEPLOYMENT CREDENTIALS REQUIRED** (a Postgres instance and
+  hosting environment with `DATABASE_URL` must be supplied by the operator).
+- **Environment activation:** all provider keys are read server-side only,
+  never bundled to the client; the full classification and required keys are
+  documented in `docs/environment.md`. Nothing was marked healthy by
+  configuration alone.
+- **Provider activation path:** the existing registry + health-check
+  architecture is the single activation path (no second provider system).
+  SambaNova previously returned HTTP 402 (key authenticated, no credits) —
+  the honest statuses (`FAILED`, `CREDIT_LIMITED` semantics) stand; no fake
+  AI responses exist. Until credentials with credits are supplied, AI-provider
+  capabilities remain NOT CONFIGURED / BLOCKED externally.
+- **Research path:** Brave/Reddit/SerpApi adapters degrade gracefully when
+  unconfigured (`CONFIG_ERROR`, never fake evidence). With credentials
+  supplied, Reddit requires no key and Brave/SerpApi become `REAL LIVE DATA`
+  paths. No research run was executed in this environment (no live provider
+  access), so the first real research run remains **NOT VERIFIED — EXTERNAL
+  PROVIDER ACCESS REQUIRED**.
+- **First real opportunity / experiment / REAL_DATA metric:** the full chain
+  (validated opportunity → handoff → experiment → metric with provenance →
+  learning) is implemented and test-verified; actual execution requires real
+  provider data and a human-run experiment. All remain **NOT VERIFIED — REAL
+  PROVIDER DATA REQUIRED**. Approval gates were not bypassed.
+
+## Phase 26 — Revenue & Growth Operations
+
+Phase 26 adds the minimum data-driven operational layer on measured data,
+reusing Phase 6B aggregation and Phase 23 growth state (no parallel revenue
+model, no new scoring):
+
+- **Revenue intelligence engine** (`src/lib/revenue-intelligence.ts`, pure +
+  deterministic): per-experiment revenue/cost/profit/ROI/conversions computed
+  ONLY from `REAL_DATA` records via the existing `summarizeMetricSeries`;
+  estimated records are counted but never upgrade any claim. Outcomes are
+  classified from persisted decisions: MEASURED_POSITIVE, MEASURED_NEGATIVE,
+  UNCERTAIN (a WIN/STOP decision without real measurements is never
+  upgraded), NOT_MEASURED, AWAITING_MEASUREMENT, REQUIRES_REVIEW, BLOCKED.
+  Measurement completeness = distinct recorded metrics / 7; unknowns are
+  never padded with zeros.
+- **Operational recommendations** (states, not a score, each citing its
+  persisted evidence): CONTINUE_EXPERIMENT, COLLECT_MORE_DATA, PAUSE,
+  REASSESS, HUMAN_REVIEW, SCALE_CANDIDATE, LOW_SIGNAL, INSUFFICIENT_DATA.
+  Approval gates stay mandatory: a WAITING_APPROVAL task forces HUMAN_REVIEW
+  even with a winning outcome.
+- **API + UI:** owner-scoped `GET /api/growth/revenue` (requireUser, bounded
+  reads ≤100 experiments / ≤200 metric rows, sample rows excluded) and a
+  clearly labeled revenue-intelligence card on `/growth` showing real
+  revenue/cost/conversions, per-experiment outcomes, recommendations with
+  evidence, and data classes (REAL_DATA / ESTIMATED_DATA / NOT_MEASURED).
+- **Honest empty state:** with no real data the portfolio reports an
+  INSUFFICIENT_DATA provenance note and NOT_MEASURED totals — growth
+  optimization is not pretended.
+- **External feedback adapter:** still NOT CONFIGURED (no provider selected /
+  credentials available). The Phase 21 boundary remains the single insertion
+  point; when a provider is chosen, implement ONE adapter through
+  `ExternalFeedbackAdapter` — provider-specific logic stays out of the core
+  learning engine.
+
+Status: IMPLEMENTED / TEST-VERIFIED (14 engine tests). Revenue operations on
+real data remain NOT VERIFIED until Phase 25 activation supplies real
+measurements.
+
+## Verification status summary (post Phase 26)
+
+| Capability | State |
+| --- | --- |
+| Implementation, tests, typecheck, lint, build | PASS (CI runs all incl. lint) |
+| Production deployment | NOT VERIFIED — DEPLOYMENT CREDENTIALS REQUIRED |
+| Provider health (AI) | BLOCKED externally (SambaNova HTTP 402: no credits) |
+| Research providers | CONFIG-DEPENDENT (keys required; Reddit keyless) |
+| First real research run / opportunity | NOT VERIFIED — EXTERNAL PROVIDER ACCESS REQUIRED |
+| First real experiment + REAL_DATA metric | NOT VERIFIED — REAL EXPERIMENT REQUIRED (human-controlled, approval-gated) |
+| External feedback | NOT CONFIGURED (adapter boundary ready) |
+| Revenue intelligence | IMPLEMENTED; reports INSUFFICIENT_DATA until real metrics exist |
