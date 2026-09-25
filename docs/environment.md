@@ -22,7 +22,7 @@ status, last health check, sanitized error, and capabilities.
 | --- | --- | --- |
 | `SAMBANOVA_API_KEY` | for live AI | Bearer token, read only in server code. Without it the adapter reports `NOT_CONFIGURED` and executions end `UNAVAILABLE` — output is never fabricated. |
 | `SAMBANOVA_BASE_URL` | no | Override the OpenAI-compatible endpoint (default `https://api.sambanova.ai/v1/chat/completions`). |
-| `SAMBANOVA_MODEL` | no | Model id (default `Meta-Llama-3.1-8B-Instruct`). |
+| `SAMBANOVA_MODEL` | no | Model id (default `Meta-Llama-3.3-70B-Instruct`). |
 | `AI_PROVIDER_ENV` | no | `LIVE` or `TEST`. Labels the environment so test configuration is always distinguishable from production; defaults to `UNKNOWN`. |
 
 ## AI provider — generic OpenAI-compatible endpoint (Phase 7 agent runtime)

@@ -1198,3 +1198,15 @@ REAL_DATA).
 | First real experiment + REAL_DATA metric | NOT VERIFIED — REAL EXPERIMENT REQUIRED (human-controlled, approval-gated) |
 | External feedback | NOT CONFIGURED (adapter boundary ready) |
 | Revenue intelligence | IMPLEMENTED; reports INSUFFICIENT_DATA until real metrics exist |
+## Production Activation Pack (post Phase 27)
+
+Documentation-only preparation for eventual real-world activation — no new product phase, no code
+changes required:
+
+- `docs/PRODUCTION_ACTIVATION.md` — full activation inventory (A–P with per-item status), the
+  complete environment-variable audit, the deployment runbook, the observability checklist, and
+  the rollback/failure plan
+- `docs/PROVIDER_ACTIVATION.md` — provider-by-provider matrix separating CODE IMPLEMENTED from
+  PROVIDER LIVE from REAL DATA VERIFIED (no provider is live today)
+- `docs/FIRST_REAL_LOOP.md` — first real research run, first human-controlled experiment, the
+  REAL_DATA verification gate, and the four-level revenue verification gate
