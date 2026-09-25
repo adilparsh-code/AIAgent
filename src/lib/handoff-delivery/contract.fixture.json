@@ -1,0 +1,51 @@
+{
+  "contractId": "aiagent.income-lab.opportunity-handoff",
+  "contractVersion": 1,
+  "handoffId": "handoff-golden-1",
+  "idempotencyKey": "aiagent-handoff:handoff-golden-1:v1",
+  "sourceSystem": "AIAGENT",
+  "targetSystem": "AI_INCOME_LAB",
+  "sourceOpportunityId": "opp-golden-1",
+  "validation": {
+    "conclusion": "VALIDATED",
+    "confidence": 0.82,
+    "score": 74,
+    "eligibleForImplementation": true,
+    "handoffStatus": "ACCEPTED"
+  },
+  "opportunity": {
+    "title": "Shopify margin leak dashboard",
+    "category": "SAAS",
+    "targetAudience": "Small DTC store operators",
+    "problem": "Operators cannot see which channel actually contributes margin",
+    "monetizationMethods": ["monthly subscription"],
+    "risks": ["Requires a Shopify app listing review"]
+  },
+  "experiment": {
+    "recommendedType": "MVP_BUILD",
+    "hypothesis": "A margin dashboard for 3 stores produces two paid conversions in 14 days",
+    "successCriteria": [
+      "Two of three pilot stores upgrade to the paid tier within 14 days",
+      "Reported channel margin reconciles with store export for at least 95% of SKUs"
+    ],
+    "budgetLimit": 250,
+    "timeLimitDays": 30
+  },
+  "evidence": [
+    {
+      "evidenceId": "ev-golden-1",
+      "source": "brave",
+      "url": "https://example.test/margin-leak",
+      "title": "Store owners report unknown ad spend waste",
+      "supports": ["pain frequency"]
+    },
+    {
+      "evidenceId": "ev-golden-2",
+      "source": "reddit",
+      "url": "https://example.test/threads/margins",
+      "title": "Operators ask for per-channel margin reporting",
+      "supports": ["pain frequency", "willingness to switch"]
+    }
+  ],
+  "issuedAt": "2026-01-01T00:00:00.000Z"
+}
