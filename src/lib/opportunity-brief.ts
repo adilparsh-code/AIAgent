@@ -7,7 +7,7 @@ import type {
   OpportunityEvidenceBundle,
   RankingBreakdown,
 } from "./discovery-types";
-import { HANDOFF_READY_CONCLUSIONS } from "./discovery-types";
+import { evaluateResearchHandoffReadiness } from "./handoff";
 import { providerHealthSummary } from "./opportunity-validation";
 
 function urlsFor(evidence: Evidence[], ids: string[]): string[] {
@@ -31,7 +31,7 @@ export function recommendedExperiment(conclusion: ResearchConclusion, bundle: Op
     case "CONTRADICTED":
       return "Do not implement. Resolve contradictions with human review before any experiment.";
     case "REQUIRES_HUMAN_REVIEW":
-      return "Human review required. Automated discovery will not mark this ready for implementation.";
+      return "Human review required. A human must explicitly create and accept a handoff before any implementation work starts.";
     case "REJECTED":
       return "Do not implement.";
     default:
@@ -75,12 +75,20 @@ export function deriveRisks(bundle: OpportunityEvidenceBundle, errors: string[])
   return Array.from(new Set(risks));
 }
 
+/**
+ * Discovery projects the *same* authoritative handoff policy the canonical
+ * handoff API enforces (see `evaluateHandoffGate` in ./handoff). Discovery
+ * previously carried its own conclusion list, which advertised PROMISING
+ * candidates as handoff-ready even though the canonical policy rejects them.
+ */
 export function deriveHandoffStatus(conclusion: ResearchConclusion, bundle: OpportunityEvidenceBundle): HandoffStatus {
-  if (bundle.evidenceCoverage === 0) return "NOT_READY";
-  if (HANDOFF_READY_CONCLUSIONS.includes(conclusion) && bundle.contradictionCount === 0) {
-    return "READY";
-  }
-  return "NOT_READY";
+  const decision = evaluateResearchHandoffReadiness({
+    conclusion,
+    confidence: bundle.confidence,
+    evidenceCoverage: bundle.evidenceCoverage,
+    contradictionCount: bundle.contradictionCount,
+  });
+  return decision.eligible ? "READY" : "NOT_READY";
 }
 
 export function monetizationOptionsFromEvidence(bundle: OpportunityEvidenceBundle): string[] {

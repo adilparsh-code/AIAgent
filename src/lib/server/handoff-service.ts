@@ -185,8 +185,18 @@ export async function decideHandoff(
 }
 
 /**
- * Create a READY experiment from an ACCEPTED handoff. Transactional: the
- * experiment row and the handoff COMPLETED transition commit together.
+ * Create a READY experiment from an ACCEPTED handoff.
+ *
+ * HIGH-4: one handoff produces at most one experiment.
+ *  - The ACCEPTED → COMPLETED transition is a *conditional* claim inside the
+ *    transaction. Under Postgres row locking a second concurrent request waits
+ *    and then re-evaluates the WHERE clause, so it matches zero rows and
+ *    creates nothing.
+ *  - `Experiment.handoffId` carries a unique index as a second, storage-level
+ *    guarantee.
+ *  - A request that loses the race returns the already-created experiment
+ *    (idempotent replay) instead of an error or a duplicate row.
+ *
  * No campaigns launch and no money moves — the experiment starts in READY.
  */
 export async function createExperimentFromHandoff(
@@ -200,6 +210,12 @@ export async function createExperimentFromHandoff(
   const handoff = await handoffRepository.getById(id, ownerId);
   if (!handoff) throw new Error(`Handoff ${id} was not found`);
   if (handoff.status !== "ACCEPTED") {
+    // Idempotent replay: the handoff was already turned into an experiment.
+    const existing = await prisma.experiment.findFirst({
+      where: { handoffId: id, opportunity: { ownerId } },
+      orderBy: { createdAt: "asc" },
+    });
+    if (existing) return mapExperiment(existing);
     throw new Error(`Handoff ${id} must be ACCEPTED before an experiment can be created`);
   }
 
@@ -213,7 +229,22 @@ export async function createExperimentFromHandoff(
     : new Date();
 
   const created = await prisma.$transaction(async (tx) => {
-    const experiment = await tx.experiment.create({
+    // Claim the handoff first. Only the transaction that actually moves
+    // ACCEPTED → COMPLETED may create the experiment.
+    const claimed = await tx.handoff.updateMany({
+      where: { id, status: "ACCEPTED" },
+      data: { status: "COMPLETED" },
+    });
+    if (claimed.count !== 1) {
+      const replay = await tx.experiment.findFirst({
+        where: { handoffId: id },
+        orderBy: { createdAt: "asc" },
+      });
+      if (replay) return replay;
+      throw new Error(`Handoff ${id} must be ACCEPTED before an experiment can be created`);
+    }
+
+    return tx.experiment.create({
       data: {
         hypothesis: handoff.experimentHypothesis,
         opportunityId: handoff.opportunityId,
@@ -231,11 +262,6 @@ export async function createExperimentFromHandoff(
         conversionRate: 0,
       },
     });
-    await tx.handoff.update({
-      where: { id },
-      data: { status: "COMPLETED" },
-    });
-    return experiment;
   });
 
   return mapExperiment(created);

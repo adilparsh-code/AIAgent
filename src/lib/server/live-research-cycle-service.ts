@@ -22,7 +22,7 @@ export const LIVE_RESEARCH_LIMITS = {
 } as const;
 
 export interface LiveResearchCycleResult {
-  status: "SUCCEEDED" | "NOT_CONFIGURED" | "BLOCKED";
+  status: "SUCCEEDED" | "NOT_CONFIGURED" | "BLOCKED" | "IN_PROGRESS";
   researchRun: ResearchRun | null;
   decision: ReturnType<typeof decisionSummary>;
   evidenceCount: number;
@@ -90,22 +90,64 @@ export async function runLiveResearchCycle(input: {
   if (!opportunity) throw new ForbiddenError("Resource not found");
 
   const runId = buildLiveResearchRunId(input.ownerId, input.opportunityId, input.requestId);
-  const existing = await researchRepository.getById(runId, input.ownerId);
-  if (existing) {
+
+  // HIGH-3: reserve the deterministic run id BEFORE any external provider or
+  // health call. Exactly one concurrent caller wins the reservation; every
+  // other caller replays the reserved/existing run and makes no external call.
+  const reservation = await researchRepository.reserveRun({
+    runId,
+    opportunityId: input.opportunityId,
+  });
+  if (!reservation.reserved) {
+    const existing = reservation.existing ?? (await researchRepository.getById(runId, input.ownerId));
+    const inFlight = !existing || existing.status === "RUNNING";
     return {
-      status: "SUCCEEDED",
-      researchRun: existing,
+      status: inFlight ? "IN_PROGRESS" : "SUCCEEDED",
+      researchRun: existing ?? null,
       decision: decisionSummary(await getOpportunityDecision(input.opportunityId, input.ownerId)),
-      evidenceCount: existing.evidence.length,
-      realDataCount: existing.evidence.filter((item) => item.dataClass === "REAL_LIVE_DATA").length,
+      evidenceCount: existing?.evidence.length ?? 0,
+      realDataCount: existing?.evidence.filter((item) => item.dataClass === "REAL_LIVE_DATA").length ?? 0,
       rejectedEvidenceCount: 0,
       providers: { selected: [], healthy: [], skipped: [] },
       events: [],
       idempotentReplay: true,
-      safeMessage: "This requestId already has a persisted live research run; no duplicate research run was created.",
+      safeMessage: inFlight
+        ? "A live research cycle for this requestId is already in progress; no duplicate provider call was made."
+        : "This requestId already has a persisted live research run; no duplicate research run was created.",
     };
   }
 
+  // From here on this caller owns the reservation. If no run ends up being
+  // persisted the reservation is released, so the same requestId can be retried
+  // instead of being blocked forever by a stale placeholder.
+  let reservationReleased = false;
+  const releaseReservation = async () => {
+    if (reservationReleased) return;
+    reservationReleased = true;
+    await researchRepository.releaseReservation(runId).catch(() => undefined);
+  };
+
+  try {
+    return await executeReservedLiveResearchCycle({ ...input, runId, releaseReservation });
+  } catch (error) {
+    await releaseReservation();
+    throw error;
+  }
+}
+
+type ReservedLiveResearchInput = Parameters<typeof runLiveResearchCycle>[0] & {
+  /** Deterministic id reserved before any external call. */
+  runId: string;
+  /** Drops the still-in-flight reservation when no run is persisted. */
+  releaseReservation: () => Promise<void>;
+};
+
+/**
+ * Executes one reserved live research cycle. The caller has already won the
+ * reservation race, so this is the only code path that may call a provider.
+ */
+async function executeReservedLiveResearchCycle(input: ReservedLiveResearchInput): Promise<LiveResearchCycleResult> {
+  const runId = input.runId;
   const activations = await getProviderActivations();
   const initialPlan = planLiveResearchCycle(
     activations,
@@ -131,6 +173,8 @@ export async function runLiveResearchCycle(input: {
     });
     events.push(blocked);
     emit(events);
+    // No run is persisted in this path, so the reservation must not linger.
+    await input.releaseReservation();
     return {
       status: "NOT_CONFIGURED",
       researchRun: null,
@@ -165,6 +209,7 @@ export async function runLiveResearchCycle(input: {
     });
     events.push(failure);
     emit(events);
+    await input.releaseReservation();
     throw error;
   }
 
@@ -173,7 +218,9 @@ export async function runLiveResearchCycle(input: {
   result = { ...result, id: runId };
   const audit = auditRealDataProvenance(result, { healthyProviders: researchProviders });
   result = audit.run;
-  const saved = await researchRepository.save(result);
+  // This caller won the reservation, so the run is new even though the row was
+  // pre-created: count it exactly once.
+  const saved = await researchRepository.save(result, { countNewRun: true });
   const realDataCount = audit.realDataCount;
   const accepted = event({
     name: realDataCount > 0 ? "REAL_DATA_RECORDED" : "EVIDENCE_ACCEPTED",

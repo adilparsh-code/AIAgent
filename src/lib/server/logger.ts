@@ -1,10 +1,15 @@
 import "server-only";
-import { sanitizeOperationalMessage } from "@/lib/operational-events";
+import { sanitizeLogFields, sanitizeOperationalMessage } from "@/lib/operational-events";
 
 /**
  * Structured server-side logging for important operations:
  * research lifecycle, database errors, agent runs.
- * Never log secrets — only names, ids, statuses and error messages.
+ *
+ * HIGH-7: sanitization is enforced HERE, centrally, rather than depending on
+ * every call site. `apiError()` and other callers pass raw `error.message`
+ * values, which can embed API keys, bearer tokens, cookies or database
+ * connection strings. Every field is redacted and length-capped on its way
+ * into the sink, so a new call site cannot leak by forgetting to sanitize.
  */
 
 type LogLevel = "info" | "warn" | "error";
@@ -13,8 +18,10 @@ function emit(level: LogLevel, event: string, fields: Record<string, unknown> = 
   const entry = JSON.stringify({
     ts: new Date().toISOString(),
     level,
-    event,
-    ...fields,
+    // The event name is a constant from this module, but sanitize it anyway:
+    // redaction must be a property of the sink, not of the caller.
+    event: sanitizeOperationalMessage(event).slice(0, 120),
+    ...sanitizeLogFields(fields),
   });
   if (level === "error") console.error(entry);
   else if (level === "warn") console.warn(entry);

@@ -14,6 +14,16 @@ const includeTree = {
   findings: true,
 } as const;
 
+/** Postgres/Prisma unique-constraint violation (P2002). */
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "P2002"
+  );
+}
+
 /**
  * Persist a complete research run atomically:
  * ResearchRun + ResearchSource(s) + Evidence + Findings + Validation,
@@ -64,7 +74,68 @@ export class PrismaResearchRepository {
     return row ? mapValidation(row) : null;
   }
 
-  async save(run: ResearchRun): Promise<ResearchRun> {
+  /**
+   * HIGH-3 — atomically reserve a deterministic run id BEFORE any external
+   * provider call happens.
+   *
+   * The reservation is a single INSERT on the primary key, so exactly one
+   * concurrent caller can win. Every other caller observes a uniqueness
+   * conflict and must replay the existing run instead of starting a second
+   * round of provider calls. `reserved` reports which side of that race this
+   * caller is on, and only the winner may later persist the real result.
+   */
+  async reserveRun(input: { runId: string; opportunityId: string; startedAt?: Date }): Promise<{ reserved: boolean; existing: ResearchRun | null }> {
+    const prisma = getPrisma();
+    const startedAt = input.startedAt ?? new Date();
+    try {
+      await prisma.researchRun.create({
+        data: {
+          id: input.runId,
+          opportunityId: input.opportunityId,
+          // A reservation is always in-flight: no conclusion, no evidence and no
+          // confidence are claimed until the real run is saved. It is released
+          // again if the cycle fails before saving.
+          status: "RUNNING",
+          startedAt,
+          completedAt: null,
+          confidence: 0,
+          conclusion: null,
+          conclusionBasis: null,
+          providersAttempted: [],
+          providersSucceeded: [],
+          providerStatuses: [],
+          validationSignals: [],
+          errors: [],
+        },
+      });
+      return { reserved: true, existing: null };
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        return { reserved: false, existing: await this.getById(input.runId) };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * HIGH-3 — drop an unused reservation so the same requestId can be retried
+   * after a failure. Only ever removes a still-in-flight placeholder: a run
+   * that already carries a result is never deleted.
+   */
+  async releaseReservation(runId: string): Promise<boolean> {
+    const prisma = getPrisma();
+    const result = await prisma.researchRun.deleteMany({
+      where: { id: runId, status: "RUNNING", conclusion: null, completedAt: null },
+    });
+    return result.count > 0;
+  }
+
+  /**
+   * `countNewRun` is set by the caller that won the reservation race so the
+   * opportunity's researchRunCount still counts this run exactly once, even
+   * though the row was pre-created by reserveRun().
+   */
+  async save(run: ResearchRun, options: { countNewRun?: boolean } = {}): Promise<ResearchRun> {
     const prisma = getPrisma();
     try {
       const saved = await prisma.$transaction(async (tx) => {
@@ -209,13 +280,17 @@ export class PrismaResearchRepository {
         });
 
         // Opportunity research metadata stays consistent with the run.
+        // `existingRun` is expected for a reserved live-research id: the caller
+        // that won the reservation race passes countNewRun so the run is still
+        // counted exactly once.
+        const countAsNewRun = options.countNewRun === true || !existingRun;
         await tx.opportunity.update({
           where: { id: run.opportunityId },
           data: {
             lastResearchRunId: run.id,
             lastResearchAt: new Date(run.completedAt ?? run.startedAt),
             lastResearchConclusion: run.conclusion,
-            researchRunCount: existingRun ? undefined : { increment: 1 },
+            researchRunCount: countAsNewRun ? { increment: 1 } : undefined,
           },
         });
 

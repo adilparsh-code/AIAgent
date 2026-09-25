@@ -26,7 +26,16 @@ export async function POST(request: Request) {
       ? body.providerIds.filter((value): value is string => typeof value === "string").slice(0, LIVE_RESEARCH_LIMITS.MAX_PROVIDERS)
       : undefined;
     const result = await runLiveResearchCycle({ ownerId: user.id, opportunityId, title, requestId, providerIds });
-    return NextResponse.json(result, { status: result.status === "BLOCKED" ? 502 : result.status === "NOT_CONFIGURED" ? 409 : 200 });
+    // 409 = the same requestId is already in flight or the provider is not
+    // configured; 502 = the cycle ran and failed honestly. Never a 200 for
+    // work that was not actually performed.
+    const httpStatus =
+      result.status === "BLOCKED"
+        ? 502
+        : result.status === "NOT_CONFIGURED" || result.status === "IN_PROGRESS"
+          ? 409
+          : 200;
+    return NextResponse.json(result, { status: httpStatus });
   } catch (error) {
     if (isDbUnavailableError(error)) return NextResponse.json({ error: "DATABASE_URL is not configured" }, { status: 503 });
     return apiError(error, "Live research cycle failed");
