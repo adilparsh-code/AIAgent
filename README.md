@@ -1157,7 +1157,36 @@ Status: IMPLEMENTED / TEST-VERIFIED (14 engine tests). Revenue operations on
 real data remain NOT VERIFIED until Phase 25 activation supplies real
 measurements.
 
-## Verification status summary (post Phase 26)
+## Phase 27 — Production Readiness Audit + Autonomous Reliability Hardening
+
+Phase 27 is an audit-first pass over Phases 1–26 that implements only confirmed fixes. No
+architecture was rewritten, no schema semantics changed, no provider faked, and no approval gate
+bypassed.
+
+**Findings (post-audit):**
+
+- **HIGH — Phase 26 revenue service global metric bound** (`revenue-intelligence-service.ts`):
+  metric rows were loaded with one global `take: 200` across the whole portfolio. Past that cap,
+  older experiments lost their real rows and were silently misclassified as NOT_MEASURED — a
+  data-honesty defect, not merely a performance one. **Fixed:** metrics now load via a bounded
+  per-experiment include (`MAX_METRIC_ROWS_PER_EXPERIMENT: 200`, matching the established
+  decision-loader pattern), every experiment keeps its own real data, and a `truncated` flag plus a
+  visible `/growth` notice report honestly when an experiment exceeds even the per-experiment cap.
+- **False positive cleared:** an initial suspicion that `AgentTask` lacked owner/status indexes was
+  wrong — `@@index([ownerId, status])` already exists in the schema. No migration was added.
+- **No other confirmed Critical/High/Medium defects:** authentication coverage (every API route
+  requires a session; `/api/system/readiness` is intentionally the only public endpoint and leaks
+  no user data, counts, provider status, or secrets), owner scoping with 404-masking, sample-row
+  exclusion, provider status honesty (NOT_CONFIGURED / FAILED / CREDIT_LIMITED semantics),
+  autonomy bounds and fail-closed gates, REAL_DATA provenance enforcement, and the idempotency
+  infrastructure (unique execution keys, metric period/source uniqueness, append-only snapshots)
+  were re-verified and stand as implemented in Phases 1–26.
+
+**Tests added:** per-experiment bound fairness across experiments, truncation observability, and
+owner isolation of the revenue queries (stubbed Prisma surface — fixtures are TEST DATA, never
+REAL_DATA).
+
+## Verification status summary (post Phase 27)
 
 | Capability | State |
 | --- | --- |
