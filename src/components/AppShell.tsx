@@ -19,6 +19,8 @@ import {
   ArrowRightLeft,
   LogOut,
   Plug,
+  TrendingUp,
+  Server,
 } from "lucide-react";
 
 const NAV = [
@@ -27,6 +29,8 @@ const NAV = [
   { title: "Opportunities", href: "/opportunities", icon: Lightbulb },
   { title: "Handoffs", href: "/handoffs", icon: ArrowRightLeft },
   { title: "Experiments", href: "/experiments", icon: FlaskConical },
+  { title: "Growth", href: "/growth", icon: TrendingUp },
+  { title: "Platform", href: "/platform", icon: Server },
   { title: "Products", href: "/products", icon: Package },
   { title: "Revenue", href: "/revenue", icon: DollarSign },
   { title: "AI Agents", href: "/agents", icon: Bot },
