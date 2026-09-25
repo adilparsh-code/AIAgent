@@ -1168,19 +1168,26 @@ bypassed.
 - **HIGH — Phase 26 revenue service global metric bound** (`revenue-intelligence-service.ts`):
   metric rows were loaded with one global `take: 200` across the whole portfolio. Past that cap,
   older experiments lost their real rows and were silently misclassified as NOT_MEASURED — a
-  data-honesty defect, not merely a performance one. **Fixed:** metrics now load via a bounded
+  data-honesty defect, not merely a performance one. **Fixed:** metrics now load through a bounded
   per-experiment include (`MAX_METRIC_ROWS_PER_EXPERIMENT: 200`, matching the established
-  decision-loader pattern), every experiment keeps its own real data, and a `truncated` flag plus a
-  visible `/growth` notice report honestly when an experiment exceeds even the per-experiment cap.
+  decision-loader pattern), so activity in one experiment cannot consume another experiment's
+  bounded read.
+- **MEDIUM — bounded revenue reads require honest completeness reporting:** a sufficiently active
+  experiment can still exceed the fixed 200-row per-experiment cap. **Fixed:** the service loads the
+  metric-event count alongside the bounded rows, returns a `truncated` flag, and the `/growth` card
+  displays a visible notice whenever the underlying read is incomplete.
+- **Public readiness endpoint cleared by design:** the audit re-verified that
+  `/api/system/readiness` intentionally exposes only database connectivity and migration readiness.
+  It returns no user data, counts, provider status, or secrets, and responds honestly with HTTP 503
+  when readiness checks fail. No defect was found.
 - **False positive cleared:** an initial suspicion that `AgentTask` lacked owner/status indexes was
   wrong — `@@index([ownerId, status])` already exists in the schema. No migration was added.
 - **No other confirmed Critical/High/Medium defects:** authentication coverage (every API route
-  requires a session; `/api/system/readiness` is intentionally the only public endpoint and leaks
-  no user data, counts, provider status, or secrets), owner scoping with 404-masking, sample-row
-  exclusion, provider status honesty (NOT_CONFIGURED / FAILED / CREDIT_LIMITED semantics),
-  autonomy bounds and fail-closed gates, REAL_DATA provenance enforcement, and the idempotency
-  infrastructure (unique execution keys, metric period/source uniqueness, append-only snapshots)
-  were re-verified and stand as implemented in Phases 1–26.
+  requires a session), owner scoping with 404-masking, sample-row exclusion, provider status honesty
+  (NOT_CONFIGURED / FAILED / CREDIT_LIMITED semantics), autonomy bounds and fail-closed gates,
+  REAL_DATA provenance enforcement, and the idempotency infrastructure (unique execution keys,
+  metric period/source uniqueness, append-only snapshots) were re-verified and stand as implemented
+  in Phases 1–26.
 
 **Tests added:** per-experiment bound fairness across experiments, truncation observability, and
 owner isolation of the revenue queries (stubbed Prisma surface — fixtures are TEST DATA, never
@@ -1198,3 +1205,15 @@ REAL_DATA).
 | First real experiment + REAL_DATA metric | NOT VERIFIED — REAL EXPERIMENT REQUIRED (human-controlled, approval-gated) |
 | External feedback | NOT CONFIGURED (adapter boundary ready) |
 | Revenue intelligence | IMPLEMENTED; reports INSUFFICIENT_DATA until real metrics exist |
+## Production Activation Pack (post Phase 27)
+
+Documentation-only preparation for eventual real-world activation — no new product phase, no code
+changes required:
+
+- `docs/PRODUCTION_ACTIVATION.md` — full activation inventory (A–P with per-item status), the
+  complete environment-variable audit, the deployment runbook, the observability checklist, and
+  the rollback/failure plan
+- `docs/PROVIDER_ACTIVATION.md` — provider-by-provider matrix separating CODE IMPLEMENTED from
+  PROVIDER LIVE from REAL DATA VERIFIED (no provider is live today)
+- `docs/FIRST_REAL_LOOP.md` — first real research run, first human-controlled experiment, the
+  REAL_DATA verification gate, and the four-level revenue verification gate
