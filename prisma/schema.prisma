@@ -230,6 +230,7 @@ enum DiscoveryCandidateStatus {
   RESEARCHING
   RESEARCHED
   SKIPPED_DUPLICATE
+  RESEARCH_FAILED
 }
 
 enum MetricDataClass {
@@ -274,6 +275,7 @@ model User {
   agentTasks            AgentTask[]
   integrationExecutions IntegrationExecution[]
   agentExecutions       AgentExecution[]
+  handoffDeliveries     HandoffDelivery[]
 
   @@index([status])
 }
@@ -331,6 +333,7 @@ model Opportunity {
   rankingSnapshots       RankingSnapshot[]
   agentTasks             AgentTask[]
   lastResearchRunId      String?
+  lastResearchRun        ResearchRun?         @relation("OpportunityLastResearchRun", fields: [lastResearchRunId], references: [id], onDelete: SetNull)
   lastResearchAt         DateTime?
   lastResearchConclusion String?
   researchRunCount       Int                  @default(0)
@@ -339,6 +342,7 @@ model Opportunity {
   experimentEvidence     Json?
   lastRankingAt          DateTime?
   lastRankingSnapshotId  String?
+  lastRankingSnapshot    RankingSnapshot?     @relation("OpportunityLastRankingSnapshot", fields: [lastRankingSnapshotId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([category])
@@ -369,6 +373,8 @@ model RankingSnapshot {
   contributingSignals Json
   experimentIds       String[]    @default([])
   createdAt           DateTime    @default(now())
+
+  lastForOpportunities Opportunity[] @relation("OpportunityLastRankingSnapshot")
 
   @@index([opportunityId])
   @@index([ownerId])
@@ -504,11 +510,50 @@ model Handoff {
   createdAt             DateTime                         @default(now())
   updatedAt             DateTime                         @updatedAt
 
-  experiments Experiment[]
+  experiments  Experiment[]
+  deliveries   HandoffDelivery[]
 
   @@index([opportunityId])
   @@index([status])
   @@index([createdAt])
+}
+
+/// HIGH-1 — durable delivery state for the cross-repository AIAgent →
+/// AI Income Lab handoff transport.
+///
+/// One row per handoff. `idempotencyKey` is unique, so a retry of the same
+/// handoff updates the existing row instead of creating a second delivery
+/// record; the same key is the value delivered to the receiver so both sides
+/// de-duplicate on identical information.
+///
+/// The credential used for delivery is NEVER stored here. Only a bounded,
+/// redacted diagnostic message and a machine-readable error code are kept, so
+/// a database read cannot reveal a cross-service secret.
+model HandoffDelivery {
+  id            String   @id @default(cuid())
+  handoffId     String
+  handoff       Handoff  @relation(fields: [handoffId], references: [id], onDelete: Cascade)
+  idempotencyKey String  @unique
+  contractVersion Int    @default(1)
+  /// NOT_CONFIGURED | PENDING | DELIVERED | REJECTED | FAILED
+  status         String   @default("PENDING")
+  attemptCount   Int      @default(0)
+  lastErrorCode  String?
+  lastErrorMessage String?
+  httpStatus     Int?
+  /// True when the receiver reported the delivery as a duplicate replay.
+  duplicate     Boolean  @default(false)
+  /// The user who requested the delivery; null when the system attempted it.
+  requestedById String?
+  requestedBy   User?    @relation(fields: [requestedById], references: [id], onDelete: SetNull)
+  requestedAt   DateTime @default(now())
+  deliveredAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([handoffId])
+  @@index([status])
+  @@index([requestedById])
 }
 
 model RevenueEntry {
@@ -771,6 +816,9 @@ model ResearchRun {
   findings           ResearchFinding[]
   validation         Validation?
 
+  lastForOpportunities      Opportunity[]        @relation("OpportunityLastResearchRun")
+  lastForDiscoveryCandidates DiscoveryCandidate[] @relation("DiscoveryCandidateResearchRun")
+
   @@index([opportunityId])
   @@index([startedAt])
   @@index([status])
@@ -914,6 +962,7 @@ model DiscoveryCandidate {
   opportunityId        String?
   opportunity          Opportunity?             @relation(fields: [opportunityId], references: [id], onDelete: SetNull)
   researchRunId        String?
+  researchRun          ResearchRun?         @relation("DiscoveryCandidateResearchRun", fields: [researchRunId], references: [id], onDelete: SetNull)
   rank                 Int?
   rankingScore         Decimal?                 @db.Decimal(6, 1)
   confidence           Decimal?                 @db.Decimal(6, 4)

@@ -175,8 +175,14 @@ async function executeDiscoveryRunBody(
     } catch (error) {
       const message = error instanceof Error ? error.message : "unknown discovery error";
       errors.push(`${seed.title}: ${message}`);
+      // MEDIUM-6: the pipeline threw, so this candidate was NOT researched.
+      // Recording it as RESEARCHED made a failed candidate indistinguishable
+      // from a genuine result for every reader that filters on that status,
+      // while the row actually held only an error string and a NOT_READY
+      // handoff. The failure is recorded honestly instead; the opportunity and
+      // research rows are left exactly as they are, never deleted.
       const updated = await discoveryRepository.updateCandidate(created.id, {
-        status: "RESEARCHED",
+        status: "RESEARCH_FAILED",
         errors: [message],
         handoffStatus: "NOT_READY",
       });

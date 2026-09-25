@@ -23,7 +23,33 @@ import {
  *   estimated cost is null unless the provider supplies real usage figures
  *   that a known price can be applied to. Unknown → null, never invented.
  */
-const SAMBANOVA_BASE_URL = "https://api.sambanova.ai/v1/chat/completions";
+const SAMBANOVA_DEFAULT_BASE_URL = "https://api.sambanova.ai/v1/chat/completions";
+const MAX_BASE_URL_LENGTH = 300;
+
+/**
+ * MEDIUM-8: `SAMBANOVA_BASE_URL` is documented in `docs/environment.md` and
+ * `docs/PRODUCTION_ACTIVATION.md` as a supported override, and is advertised
+ * in `SAMBANOVA_OPTIONAL_ENV_VARS`, but the constant was hardcoded and the
+ * variable was never read. An operator who set it (for a regional endpoint, a
+ * gateway, or a self-hosted OpenAI-compatible service) silently kept talking
+ * to the public endpoint.
+ *
+ * The override is read at call time and fails closed: only an absolute `https:`
+ * URL within a bounded length is honoured. Anything else falls back to the
+ * default, so a typo cannot silently redirect provider traffic — and no
+ * credential is ever sent to a non-https endpoint.
+ */
+export function resolveSambaNovaBaseUrl(env: Record<string, string | undefined> = process.env): string {
+  const raw = (env.SAMBANOVA_BASE_URL ?? "").trim();
+  if (raw.length === 0 || raw.length > MAX_BASE_URL_LENGTH) return SAMBANOVA_DEFAULT_BASE_URL;
+  try {
+    const url = new URL(raw);
+    if (url.protocol !== "https:" || url.hostname.length === 0) return SAMBANOVA_DEFAULT_BASE_URL;
+    return url.toString();
+  } catch {
+    return SAMBANOVA_DEFAULT_BASE_URL;
+  }
+}
 /**
  * Default model id. SambaNova rotates its catalogue, so a stale hardcoded id
  * is a real failure mode (the API answers 410/404 for retired models). This
@@ -107,7 +133,7 @@ export function createSambaNovaAdapter(): IntegrationAdapter {
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 10_000);
-        const response = await fetch(SAMBANOVA_BASE_URL, {
+        const response = await fetch(resolveSambaNovaBaseUrl(), {
           method: "POST",
           headers: {
             Authorization: `Bearer ${process.env.SAMBANOVA_API_KEY}`,
@@ -209,7 +235,7 @@ export function createSambaNovaAdapter(): IntegrationAdapter {
       try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), this.timeoutMs);
-        const response = await fetch(SAMBANOVA_BASE_URL, {
+        const response = await fetch(resolveSambaNovaBaseUrl(), {
           method: "POST",
           headers: {
             Authorization: `Bearer ${process.env.SAMBANOVA_API_KEY}`,

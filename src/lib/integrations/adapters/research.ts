@@ -1,3 +1,4 @@
+import { buildSerpApiUrl, redactProviderUrl } from "../../research-provider-url";
 import {
   classifyHttpError,
   errorClassToStatus,
@@ -27,6 +28,16 @@ import {
  */
 
 const SEARCH_CAPS: readonly IntegrationCapability[] = ["SEARCH", "READ_DATA"];
+
+/**
+ * MEDIUM-5: a transport error can carry the request URL in its message. The
+ * SerpApi credential lives in that URL's query string, so any URL in an error
+ * message is redacted before the message is sanitized and stored.
+ */
+function redactProviderCredentialInMessage(error: unknown): string {
+  const message = error instanceof Error ? error.message : "request failed";
+  return message.replace(/https?:\/\/\S+/gi, (match) => redactProviderUrl(match));
+}
 
 function resolveEnvironment(): "LIVE" | "TEST" | "UNKNOWN" {
   const raw = (process.env.RESEARCH_PROVIDER_ENV ?? "").trim().toUpperCase();
@@ -407,10 +418,10 @@ export function createSerpApiTrendsAdapter(): IntegrationAdapter {
         };
       }
       try {
-        const url = new URL("https://serpapi.com/search.json");
-        url.searchParams.set("engine", "google_trends");
-        url.searchParams.set("q", "test");
-        url.searchParams.set("api_key", process.env.SERPAPI_API_KEY ?? "");
+        // MEDIUM-5: built by the shared helper so the credential-bearing URL
+        // exists in exactly one auditable place and is never stringified into
+        // a log line or diagnostic.
+        const url = buildSerpApiUrl({ engine: "google_trends", q: "test" }, process.env.SERPAPI_API_KEY ?? "");
         const response = await fetchWithTimeout(url.toString(), { headers: { Accept: "application/json" } }, 15_000);
         return {
           ...base,
@@ -425,7 +436,7 @@ export function createSerpApiTrendsAdapter(): IntegrationAdapter {
           status: "FAILED",
           checkedAt: new Date().toISOString(),
           durationMs: Date.now() - startedAt,
-          error: sanitizeErrorMessage(error instanceof Error ? error.message : "health probe failed"),
+          error: sanitizeErrorMessage(redactProviderCredentialInMessage(error)),
         };
       }
     },
@@ -454,10 +465,7 @@ export function createSerpApiTrendsAdapter(): IntegrationAdapter {
         });
       }
       try {
-        const url = new URL("https://serpapi.com/search.json");
-        url.searchParams.set("engine", "google_trends");
-        url.searchParams.set("q", query);
-        url.searchParams.set("api_key", process.env.SERPAPI_API_KEY ?? "");
+        const url = buildSerpApiUrl({ engine: "google_trends", q: query }, process.env.SERPAPI_API_KEY ?? "");
         const response = await fetchWithTimeout(url.toString(), { headers: { Accept: "application/json" } }, this.timeoutMs);
         if (!response.ok) {
           return finish({

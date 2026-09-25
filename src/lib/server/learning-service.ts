@@ -68,6 +68,30 @@ function toMetricPoint(row: MetricRowLike): MetricPointRaw {
 
 type PrismaDecimal = import("@prisma/client").Prisma.Decimal;
 
+/**
+ * MEDIUM-4 — bounded, non-degenerate reranking.
+ *
+ * A rerank loaded the owner's entire opportunity set, every experiment for
+ * those opportunities, and every recorded metric row, all in memory; then it
+ * did linear `find`/`filter` scans inside the per-experiment and per-opportunity
+ * loops, so the cost grew with the product of the set sizes. Finally the write
+ * phase (snapshot → opportunity columns → experiment feedback) ran as separate
+ * statements outside any transaction, so a mid-loop failure left half of the
+ * portfolio re-ranked and half of it not, with no record of which.
+ *
+ * The computation itself is unchanged — the same deterministic adjustment, the
+ * same bounded influence cap, the same append-only snapshots. Only the way it
+ * is loaded, joined and persisted changes:
+ *   - every query is bounded by an explicit, named cap;
+ *   - all lookups go through Maps, so there is no N×M scan;
+ *   - the write phase is a single transaction, so a rerank is all-or-nothing.
+ */
+export const RERANK_LIMITS = {
+  MAX_OPPORTUNITIES: 500,
+  MAX_EXPERIMENTS: 2_000,
+  MAX_METRIC_ROWS: 20_000,
+} as const;
+
 interface OpportunityForRanking {
   id: string;
   title: string;
@@ -209,10 +233,13 @@ export async function rerankOpportunities(ownerId: string): Promise<{
       experimentScoreDelta: true,
     },
     orderBy: [{ overallScore: "desc" }, { id: "asc" }],
+    take: RERANK_LIMITS.MAX_OPPORTUNITIES,
   });
   if (opportunities.length === 0) return { ranked: [], snapshotIds: [] };
 
   const opportunityIds = opportunities.map((o) => o.id);
+  // MEDIUM-4: O(1) join instead of a linear scan inside the experiment loop.
+  const opportunityById = new Map(opportunities.map((o) => [o.id, o]));
 
   // Batched: one query per table for the whole owner's set.
   const experiments = await prisma.experiment.findMany({
@@ -227,12 +254,15 @@ export async function rerankOpportunities(ownerId: string): Promise<{
       visitors: true,
       clicks: true,
     },
+    take: RERANK_LIMITS.MAX_EXPERIMENTS,
   });
+  const experimentById = new Map(experiments.map((e) => [e.id, e]));
   const experimentIds = experiments.map((e) => e.id);
   const metricRows = experimentIds.length
     ? await prisma.experimentMetric.findMany({
         where: { experimentId: { in: experimentIds } },
         orderBy: [{ periodStart: "asc" }, { periodEnd: "asc" }],
+        take: RERANK_LIMITS.MAX_METRIC_ROWS,
       })
     : [];
   const metricsByExperiment = new Map<string, typeof metricRows>();
@@ -266,7 +296,7 @@ export async function rerankOpportunities(ownerId: string): Promise<{
       totals: summary.totals,
       estimatedRecordCount: summary.estimatedRecordCount,
     });
-    const opportunity = opportunities.find((o) => o.id === experiment.opportunityId);
+    const opportunity = opportunityById.get(experiment.opportunityId);
     const signals = deriveLearningSignals({
       sufficiency,
       totals: summary.totals,
@@ -326,6 +356,16 @@ export async function rerankOpportunities(ownerId: string): Promise<{
     contractsByExperiment.set(experiment.id, contract);
   }
 
+  // MEDIUM-4: precomputed so the per-opportunity loop never rescans the whole
+  // experiment list.
+  const experimentIdsByOpportunity = new Map<string, string[]>();
+  for (const experiment of experiments) {
+    if (!metricsByExperiment.has(experiment.id)) continue;
+    const list = experimentIdsByOpportunity.get(experiment.opportunityId) ?? [];
+    list.push(experiment.id);
+    experimentIdsByOpportunity.set(experiment.opportunityId, list);
+  }
+
   // Compute new scores deterministically, then rank.
   const computed = opportunities.map((opportunity) => {
     const adjustments = adjustmentsByOpp.get(opportunity.id) ?? [];
@@ -349,9 +389,7 @@ export async function rerankOpportunities(ownerId: string): Promise<{
     const previousDelta = opportunity.experimentScoreDelta === null ? 0 : Number(opportunity.experimentScoreDelta);
     const previousScore = Math.max(0, Math.min(100, Number((researchBaseScore + previousDelta).toFixed(1))));
     const newScore = Math.max(0, Math.min(100, Number((researchBaseScore + aggregate.delta).toFixed(1))));
-    const experimentIds = experiments
-      .filter((e) => e.opportunityId === opportunity.id && metricsByExperiment.has(e.id))
-      .map((e) => e.id);
+    const experimentIds = experimentIdsByOpportunity.get(opportunity.id) ?? [];
     return {
       opportunity,
       aggregate,
@@ -388,72 +426,97 @@ export async function rerankOpportunities(ownerId: string): Promise<{
     changed: entry.newScore !== entry.previousScore,
   }));
 
-  // Persist audit snapshots + learning columns (append-only, idempotent deltas).
-  const snapshotIds: string[] = [];
-  for (const entry of computed) {
-    const opportunity = entry.opportunity;
-    const aggregate = entry.aggregate;
-    const rankedEntry = ranked.find((r) => r.opportunityId === opportunity.id)!;
-    const snapshot = await prisma.rankingSnapshot.create({
-      data: {
-        opportunityId: opportunity.id,
-        ownerId,
-        previousScore: entry.previousScore,
-        newScore: entry.newScore,
-        previousRank: previousRankById.get(opportunity.id) ?? null,
-        newRank: rankedEntry.rank,
-        experimentDelta: aggregate.delta,
-        contradiction: aggregate.contradiction,
-        validationContext: entry.validationContext,
-        confidence: entry.confidence,
-        reason: aggregate.explanation.join(" ") || "No recorded experiment evidence; ranking unchanged.",
-        contributingSignals: (adjustmentsByOpp.get(opportunity.id) ?? []).flatMap((a) =>
-          a.signals.map((s) => ({ key: s.key, basis: s.basis })),
-        ) as unknown as PrismaJson,
-        experimentIds: entry.experimentIds,
-      },
-    });
-    snapshotIds.push(snapshot.id);
-    await prisma.opportunity.update({
-      where: { id: opportunity.id },
-      data: {
-        experimentScoreDelta: aggregate.delta,
-        experimentEvidence: {
-          experimentCount: aggregate.experimentCount,
-          completedCount: aggregate.completedCount,
-          contradiction: aggregate.contradiction,
-          confidence: aggregate.experimentConfidence,
-          explanation: aggregate.explanation,
-        } as unknown as PrismaJson,
-        lastRankingAt: new Date(),
-        lastRankingSnapshotId: snapshot.id,
-      },
-    });
+  // MEDIUM-4: O(1) lookup instead of a linear scan of `ranked` per entry.
+  const rankByOpportunityId = new Map(ranked.map((entry) => [entry.opportunityId, entry.rank]));
+  // MEDIUM-4: precomputed once, instead of scanning every contract for every
+  // opportunity.
+  const contractIdsByOpportunity = new Map<string, string[]>();
+  for (const [experimentId, contract] of contractsByExperiment) {
+    const list = contractIdsByOpportunity.get(contract.opportunityId) ?? [];
+    list.push(experimentId);
+    contractIdsByOpportunity.set(contract.opportunityId, list);
+  }
 
-    // Persist the versioned learning contract on each experiment (Phase 5 field).
-    for (const [experimentId, contract] of contractsByExperiment) {
-      if (contract.opportunityId !== opportunity.id) continue;
-      const existing = experiments.find((e) => e.id === experimentId);
-      const legacy = (existing?.feedback ?? null) as ExperimentFeedback | null;
-      const feedback: ExperimentFeedback | null = legacy
-        ? { ...legacy, dataClass: contract.experimentEvidence.dataClass === "ESTIMATED_DATA" ? "ESTIMATED_DATA" : legacy.dataClass }
-        : null;
-      await prisma.experiment.update({
-        where: { id: experimentId },
+  // Persist audit snapshots + learning columns (append-only, idempotent deltas).
+  //
+  // MEDIUM-4: the whole write phase is one transaction. Previously each
+  // statement committed independently, so a failure part-way through left the
+  // portfolio half re-ranked with no record of which half, and the next
+  // rerank started from a state no snapshot described.
+  const snapshotIds: string[] = [];
+  const learningEvents: string[] = [];
+  await prisma.$transaction(async (tx) => {
+    for (const entry of computed) {
+      const opportunity = entry.opportunity;
+      const aggregate = entry.aggregate;
+      const snapshot = await tx.rankingSnapshot.create({
         data: {
-          feedback: {
-            ...(feedback ?? {}),
-            learning: contract,
-          } as unknown as PrismaJson,
+          opportunityId: opportunity.id,
+          ownerId,
+          previousScore: entry.previousScore,
+          newScore: entry.newScore,
+          previousRank: previousRankById.get(opportunity.id) ?? null,
+          newRank: rankByOpportunityId.get(opportunity.id) ?? null,
+          experimentDelta: aggregate.delta,
+          contradiction: aggregate.contradiction,
+          validationContext: entry.validationContext,
+          confidence: entry.confidence,
+          reason: aggregate.explanation.join(" ") || "No recorded experiment evidence; ranking unchanged.",
+          contributingSignals: (adjustmentsByOpp.get(opportunity.id) ?? []).flatMap((a) =>
+            a.signals.map((s) => ({ key: s.key, basis: s.basis })),
+          ) as unknown as PrismaJson,
+          experimentIds: entry.experimentIds,
         },
       });
-      logger.operationalEvent({
-        event: "LEARNING_SIGNAL_GENERATED",
-        safeMessage: `Learning signal generated for experiment ${experimentId}; data class ${contract.experimentEvidence.dataClass}.`,
-        severity: contract.outcome === "INSUFFICIENT" ? "WARNING" : "INFO",
-        dataClass: contract.experimentEvidence.dataClass === "ESTIMATED_DATA" ? "ESTIMATED_DATA" : "REAL_DATA",
+      snapshotIds.push(snapshot.id);
+      await tx.opportunity.update({
+        where: { id: opportunity.id },
+        data: {
+          experimentScoreDelta: aggregate.delta,
+          experimentEvidence: {
+            experimentCount: aggregate.experimentCount,
+            completedCount: aggregate.completedCount,
+            contradiction: aggregate.contradiction,
+            confidence: aggregate.experimentConfidence,
+            explanation: aggregate.explanation,
+          } as unknown as PrismaJson,
+          lastRankingAt: new Date(),
+          lastRankingSnapshotId: snapshot.id,
+        },
       });
+
+      // Persist the versioned learning contract on each experiment (Phase 5 field).
+      for (const experimentId of contractIdsByOpportunity.get(opportunity.id) ?? []) {
+        const contract = contractsByExperiment.get(experimentId);
+        if (!contract) continue;
+        const legacy = (experimentById.get(experimentId)?.feedback ?? null) as ExperimentFeedback | null;
+        const feedback: ExperimentFeedback | null = legacy
+          ? { ...legacy, dataClass: contract.experimentEvidence.dataClass === "ESTIMATED_DATA" ? "ESTIMATED_DATA" : legacy.dataClass }
+          : null;
+        await tx.experiment.update({
+          where: { id: experimentId },
+          data: {
+            feedback: {
+              ...(feedback ?? {}),
+              learning: contract,
+            } as unknown as PrismaJson,
+          },
+        });
+        learningEvents.push(`${experimentId}:${contract.experimentEvidence.dataClass}:${contract.outcome}`);
+      }
     }
+  });
+
+  // Emitted only after the transaction committed, so an operational event can
+  // never describe a learning signal that was rolled back.
+  for (const event of learningEvents) {
+    const [experimentId, dataClass, outcome] = event.split(":");
+    logger.operationalEvent({
+      event: "LEARNING_SIGNAL_GENERATED",
+      safeMessage: `Learning signal generated for experiment ${experimentId}; data class ${dataClass}.`,
+      severity: outcome === "INSUFFICIENT" ? "WARNING" : "INFO",
+      dataClass: dataClass === "ESTIMATED_DATA" ? "ESTIMATED_DATA" : "REAL_DATA",
+    });
   }
 
   logger.operationalEvent({

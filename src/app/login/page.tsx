@@ -5,11 +5,13 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui";
 import { apiSend } from "@/lib/http";
+import { safeReturnTo } from "@/lib/safe-return-to";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const returnTo = searchParams.get("returnTo") || "/";
+  // MEDIUM-10: untrusted `returnTo` is resolved to a same-origin path only.
+  const returnTo = safeReturnTo(searchParams.get("returnTo"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -22,7 +24,7 @@ function LoginForm() {
     try {
       await apiSend("/api/auth/login", "POST", { email, password });
       // Full navigation so server components pick up the new session cookie.
-      window.location.assign(returnTo.startsWith("/") ? returnTo : "/");
+      window.location.assign(returnTo);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
       setBusy(false);

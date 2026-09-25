@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { authenticateUser } from "@/lib/server/auth-service";
 import { createSession, setSessionCookie } from "@/lib/server/session";
-import { rateLimit } from "@/lib/server/rate-limit";
+import { rateLimitIdentity } from "@/lib/server/rate-limit";
 import { apiError } from "@/lib/api-error";
 import { isDbUnavailableError } from "@/lib/db";
 import { UnauthorizedError } from "@/lib/authz-errors";
@@ -15,10 +15,6 @@ const MAX_BODY_BYTES = 4_096;
  */
 export async function POST(request: Request) {
   try {
-    const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      request.headers.get("x-real-ip") ||
-      "unknown";
     const raw = await request.text();
     if (raw.length > MAX_BODY_BYTES) {
       return NextResponse.json({ error: "Request body too large" }, { status: 413 });
@@ -26,7 +22,13 @@ export async function POST(request: Request) {
     const body = JSON.parse(raw || "{}") as { email?: unknown; password?: unknown };
     const email = typeof body.email === "string" ? body.email.trim().toLowerCase().slice(0, 254) : "";
 
-    const limit = rateLimit("login", `${ip}|${email}`, { max: 10, windowMs: 15 * 60 * 1000 });
+    // MEDIUM-1: keyed on the address AND on a client-independent scope
+    // bucket, so forging x-forwarded-for no longer grants unlimited attempts.
+    const limit = rateLimitIdentity(request, "login", email, {
+      max: 10,
+      windowMs: 15 * 60 * 1000,
+      scopeMax: 300,
+    });
     if (!limit.allowed) {
       return NextResponse.json(
         { error: "Too many attempts. Try again later." },

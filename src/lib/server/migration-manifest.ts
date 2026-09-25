@@ -24,4 +24,7 @@ export const EXPECTED_MIGRATIONS: readonly string[] = [
   "20260923200000_phase9a_agent_executions",
   "20260924150000_phase17_live_activation_health_metadata",
   "20260925120000_high4_one_experiment_per_handoff",
+  "20260926000000_high1_handoff_delivery",
+  "20260926001000_medium11_denormalized_foreign_keys",
+  "20260926002000_medium6_discovery_candidate_failed_status",
 ] as const;

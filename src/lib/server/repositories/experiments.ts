@@ -3,6 +3,7 @@ import type { Experiment } from "../../types";
 import type { Repository } from "../../repositories/base";
 import { getPrisma } from "../../db";
 import { mapExperiment } from "../../db-mappers";
+import { boundedListRows, LIST_READ_LIMITS } from "./list-limits";
 
 const SELECT = {
   id: true,
@@ -35,10 +36,12 @@ const SELECT = {
 } as const;
 
 export class PrismaExperimentRepository implements Repository<Experiment> {
-  async getAll(ownerId?: string): Promise<Experiment[]> {
+  async getAll(ownerId?: string, limit?: number): Promise<Experiment[]> {
     const rows = await getPrisma().experiment.findMany({
       where: ownerId ? { isSample: false, opportunity: { ownerId } } : { isSample: false },
       orderBy: { updatedAt: "desc" },
+      // MEDIUM-3: bounded read; a full-table read must not be reachable.
+      take: boundedListRows(limit),
     });
     return rows.map(mapExperiment);
   }
@@ -47,6 +50,7 @@ export class PrismaExperimentRepository implements Repository<Experiment> {
     const rows = await getPrisma().experiment.findMany({
       where: { opportunityId, isSample: false },
       orderBy: { updatedAt: "desc" },
+      take: LIST_READ_LIMITS.MAX_SCOPED_ROWS,
     });
     return rows.map(mapExperiment);
   }

@@ -1,0 +1,12 @@
+-- MEDIUM-6: a discovery candidate whose research/persistence pipeline threw
+-- was recorded as status = 'RESEARCHED'.
+--
+-- That is a data-honesty defect: downstream readers filtered on
+-- `status = 'RESEARCHED'` to mean "this candidate was actually researched and
+-- carries a handoff payload", and a failed candidate satisfied that filter
+-- while carrying only an error string and a NOT_READY handoff.
+--
+-- Additive only: an enum value is appended, no existing value is renamed or
+-- removed and no row is rewritten here. Historical rows keep whatever state
+-- they were genuinely in; only future failures are labelled honestly.
+ALTER TYPE "DiscoveryCandidateStatus" ADD VALUE IF NOT EXISTS 'RESEARCH_FAILED';
