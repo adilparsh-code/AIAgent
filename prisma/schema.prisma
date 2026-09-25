@@ -441,7 +441,9 @@ model Experiment {
 
   @@index([opportunityId])
   @@index([status])
-  @@index([handoffId])
+  // HIGH-4: one experiment per handoff. Postgres allows many NULLs in a unique
+  // column, so experiments created without a handoff are unaffected.
+  @@unique([handoffId])
   @@index([updatedAt])
   @@index([isSample])
 }

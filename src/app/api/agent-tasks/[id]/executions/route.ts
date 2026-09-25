@@ -1,56 +1,21 @@
 import { NextResponse } from "next/server";
 import { requireUser } from "@/lib/server/authz";
 import { apiError } from "@/lib/api-error";
-import { runAgentTaskExecution } from "@/lib/server/execution-orchestrator";
+import { handleAgentTaskExecutionRequest } from "@/lib/server/agent-execution-endpoint";
 import { isAgentExecutionStatus } from "@/lib/execution-contract";
-
-const MAX_BODY_BYTES = 4_000;
 
 /**
  * Phase 9A — execute an AgentTask through the provider-independent
  * orchestrator. The body may select mode "DRY_RUN" (validation-only
  * simulation); anything else runs LIVE. Ownership is resolved server-side
  * from the session — never from the body.
+ *
+ * HIGH-5: the request handling lives in `handleAgentTaskExecutionRequest` so
+ * this route and the legacy `/execute` route enforce identical validation,
+ * capability checks, execution limits, audit persistence and idempotency.
  */
 export async function POST(request: Request, context: { params: { id: string } }) {
-  try {
-    const user = await requireUser();
-    const { id } = context.params;
-    if (typeof id !== "string" || id.length === 0 || id.length > 64) {
-      return NextResponse.json({ error: "Invalid task id" }, { status: 400 });
-    }
-
-    let mode: "LIVE" | "DRY_RUN" = "LIVE";
-    const raw = await request.text().catch(() => "");
-    if (raw.length > MAX_BODY_BYTES) {
-      return NextResponse.json({ error: "Request body too large" }, { status: 413 });
-    }
-    if (raw.trim().length > 0) {
-      let body: unknown;
-      try {
-        body = JSON.parse(raw);
-      } catch {
-        return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
-      }
-      if (body !== null && typeof body === "object" && !Array.isArray(body)) {
-        const requestedMode = (body as Record<string, unknown>).mode;
-        if (requestedMode !== undefined) {
-          if (requestedMode !== "LIVE" && requestedMode !== "DRY_RUN") {
-            return NextResponse.json({ error: "mode must be LIVE or DRY_RUN" }, { status: 400 });
-          }
-          mode = requestedMode;
-        }
-      }
-    }
-
-    const outcome = await runAgentTaskExecution(id, user.id, { mode });
-    if (outcome.executionId === null && outcome.status === "BLOCKED" && outcome.message.startsWith("task not found")) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-    return NextResponse.json(outcome);
-  } catch (error) {
-    return apiError(error, "Agent task execution failed");
-  }
+  return handleAgentTaskExecutionRequest(request, context.params?.id);
 }
 
 /**

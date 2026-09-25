@@ -81,6 +81,7 @@ export type HandoffIneligibilityReason =
   | "NO_RESEARCH_RUN"
   | "VALIDATION_NOT_PERMITS_IMPLEMENTATION"
   | "NO_EVIDENCE"
+  | "CONTRADICTIONS_PRESENT"
   | "NO_CONFIDENCE"
   | "NO_SCORE"
   | "MISSING_EXPERIMENT_HYPOTHESIS"
@@ -93,18 +94,117 @@ export interface HandoffEligibility {
 }
 
 /**
+ * THE authoritative handoff eligibility policy.
+ *
+ * Every handoff path — the canonical opportunity handoff contract and the
+ * discovery candidate projection — must decide through this module. There is
+ * exactly one list of implementation-permitted conclusions and exactly one
+ * gate function; a second list would reintroduce the HIGH-2 conflict where
+ * discovery advertised a candidate as handoff-ready that the canonical handoff
+ * API then rejected.
+ */
+export const HANDOFF_IMPLEMENTATION_PERMITTED_CONCLUSIONS: readonly ResearchConclusion[] = [
+  "VALIDATED",
+  "REQUIRES_HUMAN_REVIEW",
+] as const;
+
+const IMPLEMENTATION_PERMITTED_CONCLUSIONS: ReadonlySet<ResearchConclusion> = new Set(
+  HANDOFF_IMPLEMENTATION_PERMITTED_CONCLUSIONS,
+);
+
+/**
  * Conclusions that permit implementation. PROMISING is deliberately excluded
  * (per product rule: only validated opportunities proceed) but REQUIRES_HUMAN_REVIEW
  * is permitted because a human has reviewed and explicitly chosen to proceed.
  * REJECTED never permits implementation.
  */
-const IMPLEMENTATION_PERMITTED_CONCLUSIONS: ReadonlySet<ResearchConclusion> = new Set([
-  "VALIDATED",
-  "REQUIRES_HUMAN_REVIEW",
-]);
+export function isImplementationPermittedConclusion(
+  conclusion: ResearchConclusion | null | undefined,
+): boolean {
+  return conclusion !== null && conclusion !== undefined && IMPLEMENTATION_PERMITTED_CONCLUSIONS.has(conclusion);
+}
 
-export function isImplementationPermittedConclusion(conclusion: ResearchConclusion | null): boolean {
-  return conclusion !== null && IMPLEMENTATION_PERMITTED_CONCLUSIONS.has(conclusion);
+/**
+ * Normalized facts evaluated by the single handoff gate. Callers translate their
+ * own data shape into these facts; the rules themselves live in one place.
+ */
+export interface HandoffGateFacts {
+  /** The evidence-driven research conclusion, or null when no run exists. */
+  conclusion: ResearchConclusion | null;
+  /** Opportunity is explicitly REJECTED (canonical path only). */
+  opportunityRejected?: boolean;
+  /** Opportunity is explicitly NOT_ALLOWED under the halal model. */
+  halalNotAllowed?: boolean;
+  /** At least one evidence item supports the conclusion. */
+  hasEvidence: boolean;
+  /** A finite, recorded confidence value exists. */
+  hasConfidence: boolean;
+  /** A finite, recorded score exists. */
+  hasScore: boolean;
+  /** Risks are recorded. */
+  hasRisks: boolean;
+  /** A non-empty experiment hypothesis can be produced. */
+  hasHypothesis?: boolean;
+  /**
+   * Discovery cannot prove an opportunity-level rejection flag, so it declares
+   * the extra gate it *can* prove: contradictions recorded against the
+   * evidence. The canonical path leaves this false because a contradicting run
+   * is exactly the case a human explicitly reviewed (REQUIRES_HUMAN_REVIEW).
+   */
+  blockOnContradictions?: boolean;
+  /** Number of contradictions recorded for the underlying run. */
+  contradictionCount?: number;
+}
+
+/**
+ * The one handoff gate. Returns every reason an opportunity is not eligible, so
+ * a caller can never report a reason list from a different rule set.
+ */
+export function evaluateHandoffGate(facts: HandoffGateFacts): HandoffEligibility {
+  const reasons: HandoffIneligibilityReason[] = [];
+
+  if (facts.opportunityRejected) reasons.push("OPPORTUNITY_REJECTED");
+  if (facts.halalNotAllowed) reasons.push("OPPORTUNITY_HALAL_NOT_ALLOWED");
+
+  if (!facts.conclusion) reasons.push("NO_RESEARCH_RUN");
+  else if (!isImplementationPermittedConclusion(facts.conclusion)) {
+    reasons.push("VALIDATION_NOT_PERMITS_IMPLEMENTATION");
+  }
+
+  if (!facts.hasEvidence) reasons.push("NO_EVIDENCE");
+  if (facts.blockOnContradictions && (facts.contradictionCount ?? 0) > 0) {
+    reasons.push("CONTRADICTIONS_PRESENT");
+  }
+  if (!facts.hasConfidence) reasons.push("NO_CONFIDENCE");
+  if (!facts.hasScore) reasons.push("NO_SCORE");
+  if (facts.hasHypothesis === false) reasons.push("MISSING_EXPERIMENT_HYPOTHESIS");
+  if (!facts.hasRisks) reasons.push("MISSING_RISKS");
+
+  return { eligible: reasons.length === 0, reasons };
+}
+
+/**
+ * Discovery-side projection of the same policy. Discovery proves conclusion,
+ * evidence coverage, confidence and contradictions; score, risks and hypothesis
+ * are derived earlier in the discovery pipeline and are re-checked against the
+ * persisted opportunity by the canonical handoff path.
+ */
+export function evaluateResearchHandoffReadiness(facts: {
+  conclusion: ResearchConclusion;
+  confidence: number;
+  evidenceCoverage: number;
+  contradictionCount: number;
+}): HandoffEligibility {
+  return evaluateHandoffGate({
+    conclusion: facts.conclusion,
+    hasEvidence: facts.evidenceCoverage > 0,
+    hasConfidence: Number.isFinite(facts.confidence),
+    hasScore: true,
+    hasRisks: true,
+    hasHypothesis: true,
+    blockOnContradictions: true,
+    contradictionCount: facts.contradictionCount,
+  });
 }
 
 /** Default hypothesis used when the opportunity has no explicit one — traceable to its problem statement. */
@@ -127,34 +227,24 @@ export function resolveExperimentHypothesis(source: HandoffSourceData): string {
  * rules only — no invented market data and no AI judgment.
  */
 export function evaluateHandoffEligibility(source: HandoffSourceData): HandoffEligibility {
-  const reasons: HandoffIneligibilityReason[] = [];
   const { opportunity, lastResearchConclusion, lastResearchConfidence, lastResearchEvidence } = source;
 
-  if (opportunity.status === "REJECTED") reasons.push("OPPORTUNITY_REJECTED");
-  if (opportunity.halalStatus === "NOT_ALLOWED") reasons.push("OPPORTUNITY_HALAL_NOT_ALLOWED");
-  if (!lastResearchConclusion) reasons.push("NO_RESEARCH_RUN");
-  else if (!isImplementationPermittedConclusion(lastResearchConclusion)) {
-    reasons.push("VALIDATION_NOT_PERMITS_IMPLEMENTATION");
-  }
-  if (!lastResearchEvidence || lastResearchEvidence.length === 0) reasons.push("NO_EVIDENCE");
-  if (
-    lastResearchConfidence === null ||
-    lastResearchConfidence === undefined ||
-    !Number.isFinite(lastResearchConfidence)
-  ) {
-    reasons.push("NO_CONFIDENCE");
-  }
-  if (
-    opportunity.overallScore === null ||
-    opportunity.overallScore === undefined ||
-    !Number.isFinite(opportunity.overallScore)
-  ) {
-    reasons.push("NO_SCORE");
-  }
-  if (!resolveExperimentHypothesis(source)) reasons.push("MISSING_EXPERIMENT_HYPOTHESIS");
-  if (!opportunity.risks || opportunity.risks.length === 0) reasons.push("MISSING_RISKS");
-
-  return { eligible: reasons.length === 0, reasons };
+  return evaluateHandoffGate({
+    conclusion: lastResearchConclusion ?? null,
+    opportunityRejected: opportunity.status === "REJECTED",
+    halalNotAllowed: opportunity.halalStatus === "NOT_ALLOWED",
+    hasEvidence: Array.isArray(lastResearchEvidence) && lastResearchEvidence.length > 0,
+    hasConfidence:
+      lastResearchConfidence !== null &&
+      lastResearchConfidence !== undefined &&
+      Number.isFinite(lastResearchConfidence),
+    hasScore:
+      opportunity.overallScore !== null &&
+      opportunity.overallScore !== undefined &&
+      Number.isFinite(opportunity.overallScore),
+    hasRisks: Array.isArray(opportunity.risks) && opportunity.risks.length > 0,
+    hasHypothesis: resolveExperimentHypothesis(source).trim().length > 0,
+  });
 }
 
 /**

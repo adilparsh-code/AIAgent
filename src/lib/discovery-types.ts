@@ -175,4 +175,8 @@ export interface EvaluatedCandidateView {
   updatedAt: string;
 }
 
-export const HANDOFF_READY_CONCLUSIONS: ResearchConclusion[] = ["VALIDATED", "PROMISING"];
+// Handoff eligibility is intentionally NOT declared here. The single
+// authoritative policy lives in `src/lib/handoff.ts`
+// (HANDOFF_IMPLEMENTATION_PERMITTED_CONCLUSIONS + evaluateHandoffGate) and is
+// consumed by both the canonical handoff path and discovery, so the two can
+// never disagree about which conclusions may be handed off.
