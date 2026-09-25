@@ -70,6 +70,8 @@ type RevenueResponse = {
   }>;
   recommendations: Array<{ experimentId: string; recommendation: string; evidence: string[] }>;
   explanation: string[];
+  truncated: boolean;
+  bounds: { MAX_METRIC_ROWS_PER_EXPERIMENT: number };
 };
 
 const OUTCOME_BADGE: Record<string, string> = {
@@ -188,6 +190,11 @@ export default function GrowthPage() {
               </div>
             </div>
             <p className="rounded-md bg-slate-50 px-3 py-2 text-slate-600">{revenue.portfolioTotals.provenanceNote}</p>
+            {revenue.truncated && (
+              <p className="rounded-md bg-amber-50 px-3 py-2 text-amber-800">
+                Bounded read: one or more experiments exceed the per-experiment metric cap ({revenue.bounds.MAX_METRIC_ROWS_PER_EXPERIMENT} records); totals reflect the most recently recorded rows only.
+              </p>
+            )}
 
             {revenue.experiments.length > 0 && (
               <div className="space-y-2">
