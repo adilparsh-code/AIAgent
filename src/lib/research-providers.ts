@@ -1,6 +1,9 @@
 import type { ResearchProvider } from "./base-provider";
 import type { Evidence, ResearchQuery } from "./research-types";
 import { normalizeEvidenceItem } from "./evidence-normalization";
+// MEDIUM-5: the SerpApi request URL is built in exactly one place, so the
+// credential-bearing URL can never be assembled ad hoc and then surfaced.
+import { buildSerpApiUrl } from "./research-provider-url";
 
 export class ProviderNotConfiguredError extends Error {
   constructor(message: string) {
@@ -163,13 +166,11 @@ export function createGoogleTrendsProvider(): ResearchProvider {
       const key = process.env.SERPAPI_API_KEY;
       if (!key) throw new ProviderNotConfiguredError("google-trends: SERPAPI_API_KEY is not configured (SerpApi is used because Google offers no official Trends API)");
       try {
-        const url = new URL("https://serpapi.com/search.json");
-        url.searchParams.set("engine", "google_trends");
-        url.searchParams.set("data_type", "TIMESERIES");
-        url.searchParams.set("date", "today 12-m");
-        url.searchParams.set("q", query.query);
-        url.searchParams.set("api_key", key);
-        const response = await fetchWithTimeout(url, { cache: "no-store" });
+      const url = buildSerpApiUrl(
+        { engine: "google_trends", data_type: "TIMESERIES", date: "today 12-m", q: query.query },
+        key,
+      );
+      const response = await fetchWithTimeout(url, { cache: "no-store" });
         if (!response.ok) throw new Error(`google-trends: SerpApi returned HTTP ${response.status}`);
         const data = (await response.json()) as {
           error?: string;

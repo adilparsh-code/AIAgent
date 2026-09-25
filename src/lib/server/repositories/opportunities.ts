@@ -4,6 +4,7 @@ import type { Repository } from "../../repositories/base";
 import { calculateOverallScore } from "../../scoring";
 import { getPrisma } from "../../db";
 import { mapOpportunity, opportunityCreateData } from "../../db-mappers";
+import { boundedListRows } from "./list-limits";
 
 function scoreBreakdown(item: Pick<
   Opportunity,
@@ -41,18 +42,21 @@ const SCORE_FIELDS = [
 
 export class PrismaOpportunityRepository implements Repository<Opportunity> {
   /** Unscoped access — API routes must apply ownership checks (Phase 6A). */
-  async getAllUnscoped(): Promise<Opportunity[]> {
+  async getAllUnscoped(limit?: number): Promise<Opportunity[]> {
     const rows = await getPrisma().opportunity.findMany({
       where: { isSample: false },
       orderBy: { updatedAt: "desc" },
+      // MEDIUM-3: bounded read; a full-table read must not be reachable.
+      take: boundedListRows(limit),
     });
     return rows.map(mapOpportunity);
   }
 
-  async getAll(ownerId?: string): Promise<Opportunity[]> {
+  async getAll(ownerId?: string, limit?: number): Promise<Opportunity[]> {
     const rows = await getPrisma().opportunity.findMany({
       where: ownerId ? { isSample: false, ownerId } : { isSample: false },
       orderBy: { updatedAt: "desc" },
+      take: boundedListRows(limit),
     });
     return rows.map(mapOpportunity);
   }

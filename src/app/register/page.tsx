@@ -5,10 +5,12 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui";
 import { apiSend } from "@/lib/http";
+import { safeReturnTo } from "@/lib/safe-return-to";
 
 function RegisterForm() {
   const searchParams = useSearchParams();
-  const returnTo = searchParams.get("returnTo") || "/";
+  // MEDIUM-10: untrusted `returnTo` is resolved to a same-origin path only.
+  const returnTo = safeReturnTo(searchParams.get("returnTo"));
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,7 +23,7 @@ function RegisterForm() {
     setError(null);
     try {
       await apiSend("/api/auth/register", "POST", { email, password, name });
-      window.location.assign(returnTo.startsWith("/") ? returnTo : "/");
+      window.location.assign(returnTo);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Registration failed");
       setBusy(false);

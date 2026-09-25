@@ -3,6 +3,7 @@ import type { RevenueEntry } from "../../types";
 import type { Repository } from "../../repositories/base";
 import { getPrisma } from "../../db";
 import { mapRevenue } from "../../db-mappers";
+import { boundedListRows, LIST_READ_LIMITS } from "./list-limits";
 
 function netOf(item: Pick<RevenueEntry, "grossRevenue" | "fees" | "advertisingCost" | "otherCosts" | "netRevenue">) {
   if (typeof item.netRevenue === "number" && !Number.isNaN(item.netRevenue)) {
@@ -12,10 +13,12 @@ function netOf(item: Pick<RevenueEntry, "grossRevenue" | "fees" | "advertisingCo
 }
 
 export class PrismaRevenueRepository implements Repository<RevenueEntry> {
-  async getAll(ownerId?: string): Promise<RevenueEntry[]> {
+  async getAll(ownerId?: string, limit?: number): Promise<RevenueEntry[]> {
     const rows = await getPrisma().revenueEntry.findMany({
       where: ownerId ? { isSample: false, ownerId } : { isSample: false },
       orderBy: { date: "desc" },
+      // MEDIUM-3: bounded read; a full-table read must not be reachable.
+      take: boundedListRows(limit),
     });
     return rows.map(mapRevenue);
   }
@@ -24,6 +27,7 @@ export class PrismaRevenueRepository implements Repository<RevenueEntry> {
     const rows = await getPrisma().revenueEntry.findMany({
       where: { opportunityId, isSample: false },
       orderBy: { date: "desc" },
+      take: LIST_READ_LIMITS.MAX_SCOPED_ROWS,
     });
     return rows.map(mapRevenue);
   }
@@ -32,6 +36,7 @@ export class PrismaRevenueRepository implements Repository<RevenueEntry> {
     const rows = await getPrisma().revenueEntry.findMany({
       where: { productId, isSample: false },
       orderBy: { date: "desc" },
+      take: LIST_READ_LIMITS.MAX_SCOPED_ROWS,
     });
     return rows.map(mapRevenue);
   }

@@ -4,16 +4,19 @@ import type { Product } from "../../types";
 import type { Repository } from "../../repositories/base";
 import { getPrisma } from "../../db";
 import { mapProduct } from "../../db-mappers";
+import { boundedListRows } from "./list-limits";
 
 function metricsJson(metrics: Product["metrics"] | undefined): Prisma.InputJsonValue {
   return JSON.parse(JSON.stringify(metrics ?? {})) as Prisma.InputJsonValue;
 }
 
 export class PrismaProductRepository implements Repository<Product> {
-  async getAll(ownerId?: string): Promise<Product[]> {
+  async getAll(ownerId?: string, limit?: number): Promise<Product[]> {
     const rows = await getPrisma().product.findMany({
       where: ownerId ? { isSample: false, ownerId } : { isSample: false },
       orderBy: { updatedAt: "desc" },
+      // MEDIUM-3: bounded read; a full-table read must not be reachable.
+      take: boundedListRows(limit),
     });
     return rows.map(mapProduct);
   }

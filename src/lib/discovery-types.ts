@@ -23,7 +23,16 @@ export const DISCOVERY_CATEGORIES = [
 export type DiscoveryCategory = (typeof DISCOVERY_CATEGORIES)[number];
 
 export type DiscoveryRunStatus = "RUNNING" | "COMPLETED" | "PARTIAL" | "FAILED";
-export type DiscoveryCandidateStatus = "GENERATED" | "RESEARCHING" | "RESEARCHED" | "SKIPPED_DUPLICATE";
+// MEDIUM-6: RESEARCH_FAILED records a candidate whose research/persistence
+// pipeline threw. Without it, a failed candidate was stored as RESEARCHED and
+// was indistinguishable from a genuine result for every reader filtering on
+// that status.
+export type DiscoveryCandidateStatus =
+  | "GENERATED"
+  | "RESEARCHING"
+  | "RESEARCHED"
+  | "SKIPPED_DUPLICATE"
+  | "RESEARCH_FAILED";
 export type HandoffStatus = "NOT_READY" | "READY" | "PREPARED";
 
 export type ScoreProvenance = "evidence-backed" | "calculated" | "ai-estimate" | "unmeasured";

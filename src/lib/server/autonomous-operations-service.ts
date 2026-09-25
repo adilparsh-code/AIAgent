@@ -5,6 +5,7 @@ import { getProviderActivations } from "@/lib/integrations/activation-service";
 import { listExecutionsForOwner } from "@/lib/server/execution-repository";
 import { planAutonomousActions } from "@/lib/autonomous-action-planner";
 import { runAutonomousOperationsCycle, type AutonomousFailureObservation, type AutonomousLearningSignal, type AutonomousOperationsCycle, type PreviousAutonomousAction } from "@/lib/autonomous-operations";
+import { readCircuitBreakerSnapshot, writeCircuitBreakerSnapshot } from "@/lib/circuit-breaker";
 import { calculatePortfolioHealth } from "@/lib/portfolio-health";
 
 function previousActionsFromExecutions(executions: Awaited<ReturnType<typeof listExecutionsForOwner>>): PreviousAutonomousAction[] {
@@ -57,7 +58,7 @@ export async function getAutonomousOperationsCycle(ownerId: string, now = new Da
     now,
   });
   const health = calculatePortfolioHealth({ systemHealth, operationalStatus, providers, cycle: base.loop, now });
-  return runAutonomousOperationsCycle({
+  const cycle = await runAutonomousOperationsCycle({
     ownerId,
     loop: base.loop,
     controller: base.controller,
@@ -69,6 +70,12 @@ export async function getAutonomousOperationsCycle(ownerId: string, now = new Da
     previousActions: previousActionsFromExecutions(executions),
     failures: failureObservationsFromExecutions(executions),
     learningSignals: learningSignalsFromPortfolio(base.portfolio),
+    // MEDIUM-7: continue from the previous cycle's breaker state instead of
+    // starting from a closed circuit every time, so a repeatedly failing
+    // component is actually stopped rather than retried forever.
+    circuitBreakers: readCircuitBreakerSnapshot(ownerId, now),
     now,
   });
+  writeCircuitBreakerSnapshot(ownerId, cycle.circuitBreakers);
+  return cycle;
 }

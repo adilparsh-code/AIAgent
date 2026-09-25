@@ -1,69 +1,142 @@
-# AIAgent → AI Income Lab transport contract (REQUIRED, NOT YET IMPLEMENTED)
+# AIAgent → AI Income Lab transport contract
 
-Status: **documented interface only. No transport exists in this repository.**
+Status: **shared contract IMPLEMENTED. Producer IMPLEMENTED. Network delivery NOT LIVE.**
 
-This file records what a real cross-repository handoff must satisfy. It
-deliberately defines **no** endpoint URL, route, queue, webhook or credential:
-none of those have been agreed with the AI Income Lab project, and inventing
-them here would create a fake integration. Nothing in AIAgent calls out to
-another service today.
+The cross-repository handoff boundary is now specified as code on both sides of
+the same definition, and AIAgent has a real, authenticated, bounded delivery
+path. What does **not** exist — and is not faked — is an addressable AI Income
+Lab receiver: the repository at `adilparsh-code/ai-income-lab` exposes no
+inbound handoff ingestion endpoint at its current `main`, so no delivery has
+ever crossed a network boundary. Until an operator configures a real receiver,
+every delivery attempt is recorded as `NOT_CONFIGURED`.
 
-## What exists today
+## What was implemented
 
-- `src/lib/handoff.ts` defines the versioned in-repository contract type
-  `OpportunityHandoffContract` (`contractVersion: 1`) and builds it.
-- `src/lib/server/handoff-service.ts` persists handoffs and, on acceptance,
-  creates a **local** experiment.
-- `src/app/api/handoffs/[id]/execute` runs an **AIAgent-local** agent task.
-  It does not contact any other repository or service.
-- `POST /api/discovery/candidates/[id]/handoff` prepares a contract and states
-  explicitly: *"AI Income Lab actions are not executed by AIAgent."*
+| Piece | Location | Status |
+| --- | --- | --- |
+| Shared versioned contract (producer + receiver validator) | `src/lib/handoff-delivery/contract.ts` | Implemented, unit-tested |
+| Producer transport (auth, timeout, bounded retry, error semantics) | `src/lib/handoff-delivery/transport.ts` | Implemented, unit-tested |
+| Durable delivery state / delivery audit trail | `prisma` model `HandoffDelivery` | Implemented, migrated |
+| Producer service (authz, owner scoping, self-check, audit) | `src/lib/server/handoff-delivery-service.ts` | Implemented |
+| Owner-scoped delivery endpoint | `POST/GET /api/handoffs/:id/deliver` | Implemented |
+| **Receiver endpoint in AI Income Lab** | — | **Does not exist. Not faked.** |
+| **Live network delivery** | — | **NOT LIVE — no receiver, no credentials** |
 
-So a handoff currently stops at a JSON contract persisted in AIAgent.
+## The contract
 
-## Eligibility is now single-sourced
+`contractId: "aiagent.income-lab.opportunity-handoff"`, `contractVersion: 1`.
 
-Handoff eligibility is decided by exactly one policy in `src/lib/handoff.ts`:
+An envelope carries:
+
+- **contract version and identity** — `contractId`, `contractVersion`; an
+  unknown value is refused, never guessed;
+- **handoff id** — AIAgent's handoff id, the receiver's natural foreign key;
+- **source system / target system** — `AIAGENT` → `AI_INCOME_LAB`;
+- **source opportunity id** — the opportunity in AIAgent the handoff came from;
+- **opportunity data required downstream** — title, category, target audience,
+  problem, monetization methods, risks;
+- **validation / decision state** — research conclusion, confidence, score,
+  handoff status, and AIAgent's `eligibleForImplementation` verdict;
+- **evidence references** — bounded `{evidenceId, source, url, title, supports}`
+  entries. Full evidence rows never leave AIAgent;
+- **experiment proposal** — recommended type, hypothesis, success criteria,
+  budget limit, time limit. A *proposal*: delivery never triggers execution;
+- **idempotency / delivery key** — `aiagent-handoff:<handoffId>:v<version>`,
+  deterministic, so a retry is recognised as the same logical delivery;
+- **timestamp** — `issuedAt`.
+
+### Authentication expectations
+
+- **Transport:** `Authorization: Bearer <AI_INCOME_LAB_HANDOFF_TOKEN>`, sent by
+  AIAgent, validated by the receiver. The credential is never logged and never
+  written to the delivery audit trail.
+- **Endpoint:** the receiver must be reachable over **HTTPS only**. A plaintext
+  or non-absolute endpoint is treated as not configured (fail closed).
+- **Inside AIAgent:** `POST /api/handoffs/:id/deliver` requires a session
+  (`requireUser`) and owner-scoped access to the handoff. A foreign handoff
+  answers `404`, exactly like a missing one.
+
+### Delivery status and error semantics
+
+`NOT_CONFIGURED | PENDING | DELIVERED | REJECTED | FAILED`, plus
+`NOT_CONFIGURED → HTTP 503` from the delivery endpoint.
+
+| Receiver answer | AIAgent code | Retried? |
+| --- | --- | --- |
+| 2xx | — (`DELIVERED`, `duplicate` reported if the receiver says so) | n/a |
+| 401 / 403 | `AUTH_REJECTED` | no |
+| 400 with an unsupported version | `UNSUPPORTED_VERSION` | no |
+| 400 / 422 otherwise | `INVALID_PAYLOAD` | no |
+| 429 | `RATE_LIMITED` | yes |
+| 5xx | `RECEIVER_UNAVAILABLE` | yes |
+| attempt exceeded the timeout | `TIMEOUT` | yes |
+| transport failure | `NETWORK_ERROR` | yes |
+
+Retries are bounded (3 attempts) with exponential backoff capped at 8s. A
+refusal by the receiver is a decision, not a transient fault, so it is never
+retried. A failure is never reported as a successful handoff.
+
+## Required safeguards, and where they live
+
+| Safeguard | Where |
+| --- | --- |
+| Authentication | `transport.ts` (bearer credential, fail-closed config) |
+| Authorization | `handoff-delivery-service.ts` + `requireUser` on the route |
+| Owner / tenant isolation | `handoffRepository.getById(id, ownerId)`; foreign = 404 |
+| Idempotency | `handoffDeliveryKey` + unique `HandoffDelivery.idempotencyKey` |
+| Duplicate-delivery protection | same key on both sides; receiver validator refuses a mismatch |
+| Timeout | `AbortController` per attempt, bounded and configurable |
+| Bounded retry | `HANDOFF_DELIVERY_MAX_ATTEMPTS` + capped backoff |
+| Failure state | `HandoffDelivery.status` ∈ `REJECTED`/`FAILED`/`NOT_CONFIGURED` |
+| Delivery audit trail | `HandoffDelivery` row per handoff, upserted on every attempt |
+| No secret leakage | credential never persisted; error messages are fixed strings, not response bodies |
+| No uncontrolled execution | delivery requires `ACCEPTED` + implementation-eligible conclusion, and performs no downstream action itself |
+
+## Eligibility stays single-sourced
+
+The envelope carries AIAgent's verdict; it never re-derives it. The gate lives
+only in `src/lib/handoff.ts`:
 
 - `HANDOFF_IMPLEMENTATION_PERMITTED_CONCLUSIONS` — `VALIDATED`,
   `REQUIRES_HUMAN_REVIEW`. `PROMISING` is **not** permitted.
 - `evaluateHandoffGate(facts)` — the one gate.
-- `evaluateResearchHandoffReadiness(...)` — the discovery projection of the
-  same gate.
+- `evaluateResearchHandoffReadiness(...)` — the discovery projection.
 
-Any future transport must consume `OpportunityHandoffContract` and must not
-re-derive eligibility locally, or the two repositories can drift again.
+`deliverHandoff` refuses a handoff whose persisted conclusion is not
+implementation-permitted, so a transport can never become a way around the
+gate.
 
-## Requirements for a real transport
+## What the AI Income Lab repository currently provides
 
-A future implementation must satisfy all of the following. These are
-requirements, not a design that has been built.
+Verified at `adilparsh-code/ai-income-lab` `main` (`61dd988`):
 
-1. **Versioned payload.** Deliver `OpportunityHandoffContract` verbatim, with
-   `contractVersion` preserved. The receiver must reject an unknown version
-   rather than guess.
-2. **Authenticated delivery.** Both sides must authenticate the peer. No
-   unauthenticated public ingestion endpoint.
-3. **Stable idempotency key.** Every delivery carries the handoff id. A retry
-   of the same handoff must not create a second downstream experiment. This is
-   the same invariant enforced locally in HIGH-4
-   (`Experiment.handoffId` unique + a conditional `ACCEPTED → COMPLETED`
-   claim).
-4. **Durable delivery state.** Delivery status must be persisted (attempted,
-   delivered, failed, retried) so a crash cannot silently drop a handoff.
-5. **Bounded retries with backoff.** A failure must never be reported as a
-   successful handoff.
-6. **Contract tests across both repositories.** Producer payload validated
-   against the consumer schema in CI.
-7. **Explicit configuration.** The receiving endpoint address and its
-   credentials must be supplied as environment variables at deploy time. They
-   are not, and must not be, committed to either repository.
+- `src/lib/agents/coordination.ts` defines an `AgentHandoff` — an in-process
+  agent-to-agent context record (`sourceAgent`, `relevantFacts`, `hypotheses`,
+  `unresolvedQuestions`). It is **not** an inbound ingestion contract and is not
+  compatible with `OpportunityHandoffContract`.
+- There is **no** handoff ingestion route, **no** experiment-ingestion endpoint
+  and **no** external-caller contract for AIAgent.
+- The nearest existing pattern is the Ruflo runtime API
+  (`src/lib/ruflo/runtime.ts`): a bearer shared secret verified in constant
+  time, a per-credential throttle, a strict body guard, and workflow-level
+  idempotency. That is the pattern a receiver here should follow.
+- AI Income Lab is single-tenant today (no `userId`/owner column on
+  `Opportunity`), so a receiver would additionally have to decide, explicitly,
+  which local owner an inbound handoff belongs to. That is an AI Income Lab
+  product decision and has not been made.
 
-## Out of scope until the interface is agreed
+## To make delivery live
 
-- Choosing HTTP, a queue or a webhook.
-- Inventing an AI Income Lab route.
-- Adding AIAgent environment variables for a service that does not exist.
+1. Implement the receiver in AI Income Lab against
+   `parseHandoffDeliveryEnvelope` (the same definition, ported or shared).
+   Require the bearer credential, de-duplicate on `idempotencyKey`, and apply
+   the system's own human-review gate before anything executes.
+2. Set `AI_INCOME_LAB_HANDOFF_ENDPOINT` (absolute `https://` URL) and
+   `AI_INCOME_LAB_HANDOFF_TOKEN` (≥ 32 characters) in AIAgent's deployment
+   environment. Both are server-side only and are **not** committed anywhere.
+3. Optionally set `AI_INCOME_LAB_HANDOFF_TIMEOUT_MS` (1 000 – 60 000).
+4. `GET /api/handoffs/:id/deliver` then reports the capability and the real
+   outcome of the last attempt.
 
-Until a real receiver contract is agreed, handoffs remain an in-repository
-data boundary, and the UI continues to say so.
+Until all of that exists and a delivery has actually been observed by a real
+receiver, cross-repository transport is **NOT LIVE**.

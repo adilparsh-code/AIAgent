@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { safeReturnTo } from "@/lib/safe-return-to";
 
 /**
  * Phase 6A edge middleware — page-level redirect gate. Presence of the session
@@ -33,7 +34,9 @@ export function middleware(request: NextRequest) {
 
   if (!hasSessionCookie) {
     const loginUrl = new URL("/login", request.url);
-    loginUrl.searchParams.set("returnTo", pathname);
+    // MEDIUM-10: the returnTo handed to the login page is always a
+    // same-origin path, never a protocol-relative URL.
+    loginUrl.searchParams.set("returnTo", safeReturnTo(pathname, "/"));
     return NextResponse.redirect(loginUrl);
   }
   return NextResponse.next();

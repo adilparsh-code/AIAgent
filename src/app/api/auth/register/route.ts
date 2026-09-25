@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { registerUser, AuthValidationError } from "@/lib/server/auth-service";
 import { createSession, setSessionCookie } from "@/lib/server/session";
-import { rateLimit } from "@/lib/server/rate-limit";
+import { rateLimitIdentity } from "@/lib/server/rate-limit";
 import { apiError } from "@/lib/api-error";
 import { isDbUnavailableError } from "@/lib/db";
 
@@ -13,11 +13,13 @@ const MAX_BODY_BYTES = 4_096;
  */
 export async function POST(request: Request) {
   try {
-    const ip =
-      request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
-      request.headers.get("x-real-ip") ||
-      "unknown";
-    const limit = rateLimit("register", ip, { max: 10, windowMs: 60 * 60 * 1000 });
+    // MEDIUM-1: keyed on the address AND on a client-independent scope
+    // bucket, so forging x-forwarded-for no longer grants unlimited attempts.
+    const limit = rateLimitIdentity(request, "register", "", {
+      max: 10,
+      windowMs: 60 * 60 * 1000,
+      scopeMax: 200,
+    });
     if (!limit.allowed) {
       return NextResponse.json(
         { error: "Too many attempts. Try again later." },
