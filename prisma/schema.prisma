@@ -267,6 +267,8 @@ model User {
   updatedAt    DateTime   @updatedAt
 
   sessions              Session[]
+  totpSecret            TotpSecret?
+  totpRecoveryCodes     TotpRecoveryCode[]
   opportunities         Opportunity[]
   products              Product[]
   revenueEntries        RevenueEntry[]
@@ -293,6 +295,35 @@ model Session {
 
   @@index([userId])
   @@index([expiresAt])
+}
+
+/// TOTP second factor (RFC 6238, Phase 6A hardening). Exactly one per user.
+/// The Base32 secret is stored ONLY as AES-256-GCM ciphertext (see
+/// secret-box.ts); the key never leaves the environment. 2FA becomes active
+/// only after a verified authenticator code flips totpEnabled.
+model TotpSecret {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  secretCiphertext String
+  totpEnabled      Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+/// One-time recovery codes. Only the scrypt hash of each code is stored
+/// (same format as passwordHash); plaintext exists solely in the enrollment
+/// response and is never persisted or logged. A used code is kept only for
+/// reuse detection (usedAt) and can never authenticate again.
+model TotpRecoveryCode {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  codeHash  String    @unique
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
 }
 
 model Opportunity {

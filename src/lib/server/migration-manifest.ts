@@ -27,4 +27,5 @@ export const EXPECTED_MIGRATIONS: readonly string[] = [
   "20260926000000_high1_handoff_delivery",
   "20260926001000_medium11_denormalized_foreign_keys",
   "20260926002000_medium6_discovery_candidate_failed_status",
+  "20260930120000_totp_second_factor",
 ] as const;
