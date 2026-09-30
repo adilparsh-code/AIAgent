@@ -14,6 +14,11 @@ function LoginForm() {
   const returnTo = safeReturnTo(searchParams.get("returnTo"));
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // TOTP-2FA: after a valid password with 2FA enabled, the server returns a
+  // short-lived pre-auth token; the session exists only after this code
+  // verifies. The token grants nothing by itself — it is not a cookie.
+  const [preAuthToken, setPreAuthToken] = useState<string | null>(null);
+  const [totpCode, setTotpCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -22,13 +27,91 @@ function LoginForm() {
     setBusy(true);
     setError(null);
     try {
-      await apiSend("/api/auth/login", "POST", { email, password });
+      const data = await apiSend<{ totpRequired?: boolean; preAuthToken?: string; user?: unknown }>(
+        "/api/auth/login",
+        "POST",
+        { email, password },
+      );
+      if (data.totpRequired && data.preAuthToken) {
+        setPreAuthToken(data.preAuthToken);
+        setBusy(false);
+        return;
+      }
       // Full navigation so server components pick up the new session cookie.
       window.location.assign(returnTo);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
       setBusy(false);
     }
+  }
+
+  async function handleTotpSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await apiSend("/api/auth/totp/login", "POST", { preAuthToken, code: totpCode });
+      // Full navigation so server components pick up the new session cookie.
+      window.location.assign(returnTo);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Verification failed");
+      setBusy(false);
+    }
+  }
+
+  if (preAuthToken) {
+    return (
+      <div className="mx-auto max-w-sm space-y-6 py-16">
+        <div className="space-y-2 text-center">
+          <h1 className="text-2xl font-bold">Two-factor authentication</h1>
+          <p className="text-sm text-slate-600">
+            Enter your authenticator code to finish signing in.
+          </p>
+        </div>
+        <form onSubmit={handleTotpSubmit} className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="space-y-1">
+            <label htmlFor="totp-code" className="text-sm font-medium text-slate-700">
+              Authenticator code
+            </label>
+            <input
+              id="totp-code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              autoFocus
+              required
+              placeholder="6-digit code"
+              value={totpCode}
+              onChange={(event) => setTotpCode(event.target.value)}
+              className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm tracking-widest focus:border-blue-500 focus:outline-none"
+            />
+            <p className="text-xs text-slate-500">
+              You can enter a one-time recovery code here if you lost your device.
+            </p>
+          </div>
+          {error && (
+            <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+              {error}
+            </p>
+          )}
+          <Button type="submit" disabled={busy}>
+            {busy ? "Verifying…" : "Verify and sign in"}
+          </Button>
+          <p className="text-sm text-slate-600">
+            <button
+              type="button"
+              className="font-medium text-blue-600 hover:underline"
+              onClick={() => {
+                setPreAuthToken(null);
+                setTotpCode("");
+                setError(null);
+              }}
+            >
+              Back to sign in
+            </button>
+          </p>
+        </form>
+      </div>
+    );
   }
 
   return (

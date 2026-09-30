@@ -129,6 +129,7 @@ Server-side only — never use `NEXT_PUBLIC_*` for research secrets:
 | Variable | Purpose |
 | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection string (server-only). Required for persistence. |
+| `TOTP_ENCRYPTION_KEY` | 32-byte key (hex or base64) encrypting 2FA secrets at rest (server-only). Required for 2FA enrollment. |
 | `BRAVE_SEARCH_API_KEY` | Brave Search API key (optional; without it Brave reports CONFIG_ERROR). |
 | `SERPAPI_API_KEY` | SerpApi key for Google Trends data (optional; without it Google Trends reports CONFIG_ERROR). |
 
@@ -315,6 +316,43 @@ handoff → experiment → evaluate → feedback) is unchanged — it is now own
 - **Migration**: `20260923120000_phase6a_auth_multitenancy` is purely additive — creates `User`,
   `Session`, ownership columns and indexes. Existing Phase 1–5 rows keep working (owners are NULL
   until explicitly reassigned); nothing is reset or rewritten.
+
+### Two-factor authentication (TOTP, RFC 6238) — hardening of Phase 6A
+
+Optional per-account TOTP second factor, compatible with Google Authenticator, 1Password, Authy and
+other standard authenticator apps (HMAC-SHA1, 30-second step, 6 digits, ±1 step drift window).
+Implemented with `node:crypto` only — no third-party crypto dependencies.
+
+- **Enrollment** (`Settings → Account security`): password re-verification → pending secret
+  generated → scan QR / type setup key → enter a current 6-digit code → 2FA enabled → recovery
+  codes shown once. A generated secret alone never enables 2FA.
+- **Login with 2FA**: password valid → `totpRequired` + short-lived pre-auth token (5-minute,
+  server-side, SHA-256-hashed at rest in memory, not a cookie, grants nothing by itself) →
+  authenticator or recovery code → full session. No session exists before the second factor.
+- **Recovery codes**: 10 codes, cryptographically random, stored only as scrypt hashes, usable
+  exactly once in place of the TOTP code. Regeneration (password + current TOTP) invalidates all
+  previous codes. Plaintext codes are returned exactly once and never stored or logged.
+- **Disable**: requires password AND a current TOTP code (never password-only); removes the secret
+  and recovery codes and revokes all other sessions.
+- **Secret protection**: the Base32 secret is stored only as AES-256-GCM ciphertext
+  (`v1.<iv>.<tag>.<ct>`), encrypted with `TOTP_ENCRYPTION_KEY` (32 bytes; hex or base64; server-side
+  env only — e.g. `openssl rand -hex 32`). No key ⇒ enrollment fails closed; the key is never
+  hard-coded, logged, or exposed through APIs.
+- **Rate limiting** (existing MEDIUM-1 limiter): second-factor login 8 attempts / 15 min per
+  pending login (+ per-address + spoof-proof scope buckets; the pending login is revoked on
+  refusal); setup 5/15 min; confirm 8/15 min; recovery-regen and disable 5/15 min each. Failure
+  messages stay generic (no account/TOTP-state enumeration).
+- **Audit**: sanitized operational events (`totp.enabled`, `totp.disabled`,
+  `totp.verification_success/failed`, `totp.recovery_regenerated`, `totp.login_rate_limited`,
+  `totp.admin_without_2fa`). Secrets, codes, recovery codes, passwords, and tokens are never logged.
+- **Admin policy (documented limitation)**: the current architecture has no per-role security-policy
+  enforcement point, so a hard "ADMIN ⇒ 2FA required" gate would risk silently locking out existing
+  administrators. Admin password-only sign-ins are flagged (`totp.admin_without_2fa` warning) and
+  admins are encouraged to enroll; hard enforcement requires a deliberate future change (e.g. a
+  deadline + grace-period migration), not a silent switch.
+- **Migration**: `20260930120000_totp_second_factor` is purely additive — two new tables
+  (`TotpSecret`, `TotpRecoveryCode`) with cascade FKs. Password-only users keep logging in exactly
+  as before; nothing is reset or rewritten.
 
 ## Phase 6B — Time-series experiment metrics
 
