@@ -165,13 +165,24 @@ export async function deliverHandoff(handoffId: string, ownerId: string): Promis
     };
   }
 
+  // The receiver's flat contract requires the opportunity's business model.
+  // The nested envelope does not carry it, so it is read from the persisted
+  // opportunity. Missing here means the adapter refuses below — that refusal
+  // is recorded durably in HandoffDelivery, never invented around.
+  const opportunityRow = await prisma.opportunity.findUnique({
+    where: { id: handoff.opportunityId },
+    select: { businessModel: true },
+  });
+  const businessModel: string | null = opportunityRow?.businessModel ?? null;
+
   const envelope: HandoffDeliveryEnvelopeV1 = buildHandoffDeliveryEnvelope({
     contract: handoff.contract,
     eligibleForImplementation: true,
   });
 
-  // Self-check with the receiver-side validator: never put a payload on the
-  // wire that our own receiver contract would refuse.
+  // Producer-contract self-check: never build a nested envelope our own
+  // contract validator would refuse. The receiver's flat "1.0" contract is
+  // enforced by the adapter immediately before dispatch (see transport.ts).
   const selfCheck = parseHandoffDeliveryEnvelope(JSON.parse(JSON.stringify(envelope)));
   if (!selfCheck.ok) {
     logger.operationalEvent({
@@ -200,7 +211,7 @@ export async function deliverHandoff(handoffId: string, ownerId: string): Promis
     update: { requestedById: ownerId, requestedAt: new Date() },
   });
 
-  const result = await deliverHandoffEnvelope(envelope, getHandoffDeliveryConfig());
+  const result = await deliverHandoffEnvelope(envelope, getHandoffDeliveryConfig(), {}, businessModel);
 
   const deliveredAt = result.status === "DELIVERED" ? new Date() : null;
   const row = await prisma.handoffDelivery.update({
