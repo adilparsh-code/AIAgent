@@ -27,7 +27,7 @@ function contract(): OpportunityHandoffContract {
     confidence: 0.8,
     score: 70,
     evidence: [],
-    monetizationOptions: [],
+    monetizationOptions: [{ method: "monthly subscription" }],
     risks: ["r"],
     recommendedExperiment: "MVP_BUILD",
     experimentHypothesis: "h",
@@ -82,7 +82,7 @@ describe("handoff delivery transport — configuration fails closed", () => {
 describe("handoff delivery transport — NOT LIVE without configuration", () => {
   it("reports NOT_CONFIGURED and makes no network call", async () => {
     const fetchImpl = vi.fn();
-    const result = await deliverHandoffEnvelope(envelope, getHandoffDeliveryConfig({}), { fetchImpl: fetchImpl as never });
+    const result = await deliverHandoffEnvelope(envelope, getHandoffDeliveryConfig({}), { fetchImpl: fetchImpl as never }, "SAAS");
     expect(result).toMatchObject({ status: "NOT_CONFIGURED", attempts: 0 });
     expect(result.status === "NOT_CONFIGURED" && result.error.code).toBe("NOT_CONFIGURED");
     expect(fetchImpl).not.toHaveBeenCalled();
@@ -93,6 +93,7 @@ describe("handoff delivery transport — NOT LIVE without configuration", () => 
       envelope,
       { ...configured, token: null },
       { fetchImpl: (async () => jsonResponse(200)) as never },
+      "SAAS",
     );
     expect(result.status).toBe("NOT_CONFIGURED");
     if (result.status === "NOT_CONFIGURED") {
@@ -109,7 +110,7 @@ describe("handoff delivery transport — authentication and duplicate protection
       calls.push([url, init]);
       return jsonResponse(200);
     });
-    const result = await deliverHandoffEnvelope(envelope, configured, { fetchImpl: fetchImpl as never });
+    const result = await deliverHandoffEnvelope(envelope, configured, { fetchImpl: fetchImpl as never }, "SAAS");
 
     expect(result).toMatchObject({ status: "DELIVERED", attempts: 1, httpStatus: 200 });
     const [url, init] = calls[0]!;
@@ -117,7 +118,8 @@ describe("handoff delivery transport — authentication and duplicate protection
     expect(url).toBe(configured.endpoint);
     expect(headers.authorization).toBe(`Bearer ${TOKEN}`);
     expect(headers["idempotency-key"]).toBe("aiagent-handoff:handoff-1:v1");
-    expect(headers["x-handoff-contract-version"]).toBe("1");
+    // The wire contract version is the receiver's flat "1.0".
+    expect(headers["x-handoff-contract-version"]).toBe("1.0");
   });
 
   it("surfaces the receiver's duplicate verdict on a replayed delivery", async () => {
@@ -125,13 +127,14 @@ describe("handoff delivery transport — authentication and duplicate protection
       envelope,
       configured,
       { fetchImpl: (async () => jsonResponse(200, '{"duplicate":true}')) as never },
+      "SAAS",
     );
     expect(result).toMatchObject({ status: "DELIVERED", duplicate: true });
   });
 
   it("maps a rejected credential to AUTH_REJECTED and does not retry it", async () => {
     const fetchImpl = vi.fn(async () => jsonResponse(401));
-    const result = await deliverHandoffEnvelope(envelope, configured, { fetchImpl: fetchImpl as never });
+    const result = await deliverHandoffEnvelope(envelope, configured, { fetchImpl: fetchImpl as never }, "SAAS");
     expect(result).toMatchObject({ status: "REJECTED", attempts: 1 });
     if (result.status === "REJECTED") expect(result.error.code).toBe("AUTH_REJECTED");
     expect(fetchImpl).toHaveBeenCalledTimes(1);
@@ -142,6 +145,7 @@ describe("handoff delivery transport — authentication and duplicate protection
       envelope,
       configured,
       { fetchImpl: (async () => jsonResponse(403, "denied")) as never },
+      "SAAS",
     );
     if (result.status === "REJECTED") expect(JSON.stringify(result)).not.toContain(TOKEN);
   });
@@ -163,6 +167,7 @@ describe("handoff delivery transport — timeout, bounded retry and failure sema
       envelope,
       { ...configured, maxAttempts: 1 },
       { fetchImpl: fetchImpl as never, sleep: async () => undefined },
+      "SAAS",
     );
     expect(result).toMatchObject({ status: "FAILED", attempts: 1 });
     if (result.status === "FAILED") expect(result.error.code).toBe("TIMEOUT");
@@ -176,7 +181,8 @@ describe("handoff delivery transport — timeout, bounded retry and failure sema
       sleep: async (ms) => {
         sleeps.push(ms);
       },
-    });
+    },
+    "SAAS");
     expect(fetchImpl).toHaveBeenCalledTimes(HANDOFF_DELIVERY_MAX_ATTEMPTS);
     expect(result).toMatchObject({ status: "FAILED", attempts: HANDOFF_DELIVERY_MAX_ATTEMPTS });
     if (result.status === "FAILED") expect(result.error.code).toBe("RECEIVER_UNAVAILABLE");
@@ -192,7 +198,8 @@ describe("handoff delivery transport — timeout, bounded retry and failure sema
     const result = await deliverHandoffEnvelope(envelope, configured, {
       fetchImpl: fetchImpl as never,
       sleep: async () => undefined,
-    });
+    },
+    "SAAS");
     expect(fetchImpl).toHaveBeenCalledTimes(2);
     expect(result).toMatchObject({ status: "DELIVERED", attempts: 2 });
   });
@@ -202,7 +209,8 @@ describe("handoff delivery transport — timeout, bounded retry and failure sema
     const result = await deliverHandoffEnvelope(envelope, configured, {
       fetchImpl: fetchImpl as never,
       sleep: async () => undefined,
-    });
+    },
+    "SAAS");
     expect(fetchImpl).toHaveBeenCalledTimes(HANDOFF_DELIVERY_MAX_ATTEMPTS);
     if (result.status === "FAILED") expect(result.error.code).toBe("RATE_LIMITED");
   });
@@ -212,6 +220,7 @@ describe("handoff delivery transport — timeout, bounded retry and failure sema
       envelope,
       configured,
       { fetchImpl: (async () => jsonResponse(400, '{"reason":"UNSUPPORTED_CONTRACT_VERSION"}')) as never },
+      "SAAS",
     );
     if (result.status === "REJECTED") expect(result.error.code).toBe("UNSUPPORTED_VERSION");
   });

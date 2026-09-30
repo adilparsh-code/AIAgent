@@ -19,6 +19,7 @@
  */
 
 import type { HandoffDeliveryEnvelope } from "./contract";
+import { adaptHandoffEnvelopeForIncomeLab } from "./income-lab-adapter";
 
 /** Environment variables that configure the transport. Both are server-side only. */
 export const HANDOFF_DELIVERY_ENDPOINT_ENV = "AI_INCOME_LAB_HANDOFF_ENDPOINT";
@@ -108,6 +109,7 @@ export type HandoffDeliveryStatus =
  */
 export type HandoffDeliveryErrorCode =
   | "NOT_CONFIGURED"
+  | "ADAPTATION_REFUSED"
   | "AUTH_REJECTED"
   | "UNSUPPORTED_VERSION"
   | "INVALID_PAYLOAD"
@@ -202,6 +204,11 @@ const defaultSleep = (ms: number): Promise<void> => new Promise((resolve) => set
  * Deliver one envelope. Bounded attempts, hard timeout, authenticated, and
  * never reported as delivered unless the receiver actually accepted it.
  *
+ * HIGH-1: the receiver speaks the flat "1.0" contract, this process produces
+ * the nested numeric-v1 envelope, so the adaptation happens HERE — immediately
+ * before dispatch. A refused adaptation never touches the network: nothing is
+ * sent, and the caller durably records the deterministic refusal.
+ *
  * The `fetchImpl` seam exists so the timeout, retry and error-mapping
  * behaviour can be tested without a network. It is NOT a mock transport in
  * production: `deliverHandoff` always passes the platform `fetch`.
@@ -210,6 +217,8 @@ export async function deliverHandoffEnvelope(
   envelope: HandoffDeliveryEnvelope,
   config: HandoffDeliveryConfig,
   deps: HandoffTransportDeps = {},
+  /** Persisted `Opportunity.businessModel` of the handoff's opportunity. Required by the receiver. */
+  businessModel?: string | null,
 ): Promise<HandoffDeliveryResult> {
   const missing = missingHandoffDeliveryConfig(config);
   if (missing !== "NONE" || !config.endpoint || !config.token) {
@@ -229,7 +238,27 @@ export async function deliverHandoffEnvelope(
 
   const doFetch = deps.fetchImpl ?? fetch;
   const sleep = deps.sleep ?? defaultSleep;
-  const body = JSON.stringify(envelope);
+
+  // ---- HIGH-1 adaptation gate: nested v1 → flat "1.0", immediately before
+  // dispatch. A refusal is a producer-side validation decision, not a
+  // transient fault: it is never retried and never put on the wire.
+  const adapted = adaptHandoffEnvelopeForIncomeLab({
+    envelope,
+    businessModel: businessModel ?? null,
+  });
+  if (!adapted.ok) {
+    return {
+      status: "REJECTED",
+      attempts: 0,
+      error: {
+        code: "ADAPTATION_REFUSED",
+        message: `Handoff could not be adapted to the AI Income Lab 1.0 contract (${adapted.reason}${adapted.field ? ` at ${adapted.field}` : ""}); nothing was sent.`,
+        status: null,
+      },
+    };
+  }
+  const wireEnvelope = adapted.envelope;
+  const body = JSON.stringify(wireEnvelope);
 
   let attempts = 0;
   let lastError: HandoffDeliveryError = {
@@ -251,8 +280,8 @@ export async function deliverHandoffEnvelope(
           authorization: `Bearer ${config.token}`,
           "content-type": "application/json",
           accept: "application/json",
-          "idempotency-key": envelope.idempotencyKey,
-          "x-handoff-contract-version": String(envelope.contractVersion),
+          "idempotency-key": wireEnvelope.idempotencyKey,
+          "x-handoff-contract-version": wireEnvelope.contractVersion,
         },
         body,
         signal: controller.signal,
