@@ -6,62 +6,106 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import { apiGet, apiSend } from "@/lib/http";
 import {
+  Activity,
+  ArrowRightLeft,
+  Bot,
+  DollarSign,
+  FileSearch,
+  FlaskConical,
+  History,
+  Layers,
   LayoutDashboard,
   Lightbulb,
-  Package,
-  FlaskConical,
-  DollarSign,
-  Bot,
-  Settings,
-  Menu,
-  Search,
-  X,
-  ArrowRightLeft,
   LogOut,
+  Menu,
+  Package,
   Plug,
-  TrendingUp,
+  Puzzle,
+  ScrollText,
+  Search,
   Server,
+  Settings,
+  ShieldCheck,
+  TrendingUp,
+  X,
 } from "lucide-react";
 
-const NAV = [
-  { title: "Dashboard", href: "/", icon: LayoutDashboard },
-  { title: "Discovery", href: "/discovery", icon: Search },
-  { title: "Opportunities", href: "/opportunities", icon: Lightbulb },
-  { title: "Handoffs", href: "/handoffs", icon: ArrowRightLeft },
-  { title: "Experiments", href: "/experiments", icon: FlaskConical },
-  { title: "Growth", href: "/growth", icon: TrendingUp },
-  { title: "Platform", href: "/platform", icon: Server },
-  { title: "Products", href: "/products", icon: Package },
-  { title: "Revenue", href: "/revenue", icon: DollarSign },
-  { title: "AI Agents", href: "/agents", icon: Bot },
-  { title: "Integrations", href: "/integrations", icon: Plug },
-  { title: "Settings", href: "/settings", icon: Settings },
+/**
+ * Operational console navigation, grouped for fast scanning. Existing working
+ * surfaces are preserved; the operational-monitoring sections (Research,
+ * Validation, Evidence, Providers, Agent Runs, Audit Logs, System Health)
+ * read through the existing owner-scoped read APIs.
+ */
+const NAV_GROUPS: Array<{ label: string; items: Array<{ title: string; href: string; icon: React.ComponentType<{ className?: string }> }> }> = [
+  {
+    label: "Operate",
+    items: [
+      { title: "Dashboard", href: "/", icon: LayoutDashboard },
+      { title: "Research", href: "/research", icon: Search },
+      { title: "Discovery", href: "/discovery", icon: Lightbulb },
+      { title: "Opportunities", href: "/opportunities", icon: Layers },
+      { title: "Validation", href: "/validation", icon: ShieldCheck },
+      { title: "Handoffs", href: "/handoffs", icon: ArrowRightLeft },
+      { title: "Experiments", href: "/experiments", icon: FlaskConical },
+      { title: "Evidence", href: "/evidence", icon: FileSearch },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      { title: "Providers", href: "/providers", icon: Plug },
+      { title: "AI Agents", href: "/agents", icon: Bot },
+      { title: "Agent Runs", href: "/agent-runs", icon: History },
+      { title: "Audit Logs", href: "/audit-logs", icon: ScrollText },
+      { title: "System Health", href: "/health", icon: Activity },
+      { title: "Platform", href: "/platform", icon: Server },
+      { title: "Integrations", href: "/integrations", icon: Puzzle },
+    ],
+  },
+  {
+    label: "Business",
+    items: [
+      { title: "Growth", href: "/growth", icon: TrendingUp },
+      { title: "Products", href: "/products", icon: Package },
+      { title: "Revenue", href: "/revenue", icon: DollarSign },
+      { title: "Settings", href: "/settings", icon: Settings },
+    ],
+  },
 ];
+
+const NAV = NAV_GROUPS.flatMap((group) => group.items);
 
 function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   return (
-    <nav className="space-y-1" aria-label="Primary">
-      {NAV.map((item) => {
-        const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-        const Icon = item.icon;
-        return (
-          <Link
-            key={item.href}
-            href={item.href}
-            onClick={onNavigate}
-            className={cn(
-              "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium",
-              active
-                ? "bg-blue-600 text-white"
-                : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-            )}
-          >
-            <Icon className="h-4 w-4" aria-hidden />
-            {item.title}
-          </Link>
-        );
-      })}
+    <nav className="space-y-4" aria-label="Primary">
+      {NAV_GROUPS.map((group) => (
+        <div key={group.label}>
+          <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wider text-slate-400">{group.label}</div>
+          <div className="space-y-1">
+            {group.items.map((item) => {
+              const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
+              const Icon = item.icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  onClick={onNavigate}
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium",
+                    active
+                      ? "bg-blue-600 text-white"
+                      : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  )}
+                >
+                  <Icon className="h-4 w-4" aria-hidden />
+                  {item.title}
+                </Link>
+              );
+            })}
+          </div>
+        </div>
+      ))}
     </nav>
   );
 }

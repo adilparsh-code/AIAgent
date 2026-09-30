@@ -1,174 +1,331 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { getRecommendation } from "@/lib/scoring";
-import { formatCurrency } from "@/lib/utils";
-import { opportunityRepository, experimentRepository, revenueRepository } from "@/lib/repositories";
-import type { Opportunity, Experiment, RevenueEntry } from "@/lib/types";
-import { Badge, Card, CardHeader, statusBadgeClass } from "@/components/ui";
+import { apiGet } from "@/lib/http";
+import type { Opportunity, Experiment, HandoffRecord } from "@/lib/types";
+import { Card, CardHeader } from "@/components/ui";
+import {
+  DashboardCard,
+  HealthCard,
+  MetricCard,
+  StatusBadge,
+  statusTone,
+} from "@/components/console";
+import { SystemHealthPanel } from "@/components/SystemHealthPanel";
+import { AgentRunCard } from "@/components/console";
+
+/**
+ * Operational dashboard (Phase 2).
+ *
+ * Every number comes from an existing owner-scoped read API; nothing is
+ * computed differently from the backend and nothing is fabricated. When an
+ * API is unavailable the card shows "Data unavailable" — never a zero that
+ * could be mistaken for a real count.
+ */
+
+interface OperationsStatus {
+  activeResearchRuns: number;
+  failedResearchRuns: number;
+  pendingHandoffs: number;
+  waitingApprovals: number;
+  failedExecutions: number;
+  humanReviewItems: number;
+  generatedAt: string;
+}
+
+interface RecentResearchRun {
+  id: string;
+  opportunityTitle: string;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
+  conclusion: string | null;
+  evidenceCount: number;
+}
+
+interface RecentAgentRun {
+  id: string;
+  agentName: string;
+  task: string;
+  status: string;
+  startedAt: string;
+  completedAt: string | null;
+  errors: string[];
+}
+
+interface DeliveryRow {
+  idempotencyKey: string;
+  status: string;
+  lastErrorCode: string | null;
+  duplicate: boolean;
+}
+
+const DATA_UNAVAILABLE = "Data unavailable";
 
 export default function DashboardPage() {
-  const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
-  const [experiments, setExperiments] = useState<Experiment[]>([]);
-  const [revenueEntries, setRevenueEntries] = useState<RevenueEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [metrics, setMetrics] = useState({
-    totalOpportunities: 0,
-    validatedOpportunities: 0,
-    activeExperiments: 0,
-    totalRevenue: 0,
-    monthlyRevenue: 0,
-  });
+  const [ops, setOps] = useState<OperationsStatus | null>(null);
+  const [opportunities, setOpportunities] = useState<Opportunity[] | null>(null);
+  const [experiments, setExperiments] = useState<Experiment[] | null>(null);
+  const [handoffs, setHandoffs] = useState<HandoffRecord[] | null>(null);
+  const [research, setResearch] = useState<RecentResearchRun[] | null>(null);
+  const [agentRuns, setAgentRuns] = useState<RecentAgentRun[] | null>(null);
+  const [deliveries, setDeliveries] = useState<DeliveryRow[] | null>(null);
 
-  useEffect(() => {
-    async function loadDashboardData() {
-      // Load all data from repositories
-      const [opps, exps, revenues] = await Promise.all([
-        opportunityRepository.getAll(),
-        experimentRepository.getAll(),
-        revenueRepository.getAll(),
-      ]);
-
-      setOpportunities(opps);
-      setExperiments(exps);
-      setRevenueEntries(revenues);
-
-      // Calculate metrics
-      const totalOpportunities = opps.length;
-      const validated = opps.filter((o) =>
-        ["VALIDATED", "BUILDING", "PUBLISHED", "EARNING", "SCALING"].includes(o.status)
-      ).length;
-      const activeExps = exps.filter((e) => e.status === "ACTIVE").length;
-      const totalNet = await revenueRepository.getTotalNetRevenue();
-      const monthly = await revenueRepository.getMonthlyRevenue();
-
-      setMetrics({
-        totalOpportunities,
-        validatedOpportunities: validated,
-        activeExperiments: activeExps,
-        totalRevenue: totalNet,
-        monthlyRevenue: monthly,
-      });
-
-      setLoading(false);
-    }
-
-    loadDashboardData();
+  const load = useCallback(async () => {
+    setLoading(true);
+    const settled = await Promise.allSettled([
+      apiGet<OperationsStatus>("/api/system/operations"),
+      apiGet<Opportunity[]>("/api/opportunities"),
+      apiGet<Experiment[]>("/api/experiments"),
+      apiGet<HandoffRecord[]>("/api/handoffs"),
+      apiGet<RecentResearchRun[]>("/api/research/recent?limit=10"),
+      apiGet<RecentAgentRun[]>("/api/agent-runs?limit=5"),
+      apiGet<DeliveryRow[]>("/api/handoffs/deliveries?limit=25"),
+    ]);
+    const [opsR, oppsR, expsR, handoffsR, researchR, runsR, deliveriesR] = settled;
+    setOps(opsR.status === "fulfilled" ? opsR.value : null);
+    setOpportunities(oppsR.status === "fulfilled" ? oppsR.value : null);
+    setExperiments(expsR.status === "fulfilled" ? expsR.value : null);
+    setHandoffs(handoffsR.status === "fulfilled" ? handoffsR.value : null);
+    setResearch(researchR.status === "fulfilled" ? researchR.value : null);
+    setAgentRuns(runsR.status === "fulfilled" ? runsR.value : null);
+    setDeliveries(deliveriesR.status === "fulfilled" ? deliveriesR.value : null);
+    setLoading(false);
   }, []);
 
-  if (loading) return <div className="p-8 text-center">Loading dashboard data...</div>;
+  useEffect(() => {
+    void load();
+  }, [load]);
 
-  const opps = [...opportunities].sort((a, b) => b.overallScore - a.overallScore);
-  const activeExperiments = experiments.filter((e) => e.status === "ACTIVE");
+  // Counts are computed ONLY from successfully fetched, persisted rows.
+  const persistedOpportunities = opportunities ?? [];
+  const validatedCount = persistedOpportunities.filter((o) =>
+    ["VALIDATED", "BUILDING", "PUBLISHED", "EARNING", "SCALING"].includes(o.status),
+  ).length;
+  const handoffList = handoffs ?? [];
+  const handoffsAccepted = handoffList.filter((h) => h.status === "ACCEPTED").length;
+  const handoffsRejected = handoffList.filter((h) => h.status === "REJECTED").length;
+  const deliveryList = deliveries ?? [];
+  const notConfiguredDelivery = deliveryList.find((row) => row.status === "NOT_CONFIGURED");
+  const runningExperiments = (experiments ?? []).filter((e) =>
+    ["ACTIVE", "RUNNING", "READY", "ITERATING"].includes(e.status),
+  ).length;
 
-  // Next Best Action: highest scoring HALAL opportunity; NOT_ALLOWED can never be recommended.
-  const eligible = opps.filter((o) => o.halalStatus !== "NOT_ALLOWED");
-  const top = eligible[0] ?? opps[0];
-  const recommendation = getRecommendation(top.halalStatus, top.title, top.overallScore);
+  const transportStatus = notConfiguredDelivery
+    ? "NOT_CONFIGURED"
+    : deliveryList.some((row) => row.status === "DELIVERED")
+      ? "HEALTHY"
+      : deliveryList.length > 0
+        ? "DEGRADED"
+        : "UNKNOWN";
 
-  const displayMetrics = [
-    { label: "Total Opportunities", value: String(metrics.totalOpportunities) },
-    { label: "Validated Opportunities", value: String(metrics.validatedOpportunities) },
-    { label: "Active Experiments", value: String(metrics.activeExperiments) },
-    { label: "Total Revenue", value: formatCurrency(metrics.totalRevenue) },
-    { label: "Monthly Revenue", value: formatCurrency(metrics.monthlyRevenue) },
+  const metrics: Array<{ label: string; value: string | null; hint: string; href: string }> = [
+    {
+      label: "Research runs (recent)",
+      value: research ? String(research.length) : null,
+      hint: ops ? `${ops.activeResearchRuns} active · ${ops.failedResearchRuns} failed` : "Owner-scoped persisted runs",
+      href: "/research",
+    },
+    {
+      label: "Opportunities discovered",
+      value: opportunities ? String(persistedOpportunities.length) : null,
+      hint: "Persisted opportunities",
+      href: "/opportunities",
+    },
+    {
+      label: "Opportunities validated",
+      value: opportunities ? String(validatedCount) : null,
+      hint: "VALIDATED or further along the lifecycle",
+      href: "/validation",
+    },
+    {
+      label: "Ready for handoff",
+      value: ops ? String(ops.pendingHandoffs) : null,
+      hint: "DRAFT / HANDOFF_READY handoffs",
+      href: "/handoffs",
+    },
+    {
+      label: "Handoffs accepted",
+      value: handoffs ? String(handoffsAccepted) : null,
+      hint: "Human-accepted handoffs",
+      href: "/handoffs",
+    },
+    {
+      label: "Handoffs rejected",
+      value: handoffs ? String(handoffsRejected) : null,
+      hint: "Human-rejected handoffs",
+      href: "/handoffs",
+    },
+    {
+      label: "Experiments running",
+      value: experiments ? String(runningExperiments) : null,
+      hint: "ACTIVE / RUNNING / READY / ITERATING",
+      href: "/experiments",
+    },
+    {
+      label: "Agent runs (recent)",
+      value: agentRuns ? String(agentRuns.length) : null,
+      hint: ops ? `${ops.failedExecutions} failed executions` : "Persisted execution records",
+      href: "/agent-runs",
+    },
   ];
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
-        <p className="text-sm text-slate-500">Track and manage your income-generating opportunities, experiments, and revenue.</p>
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-bold">Operations</h1>
+          <p className="text-sm text-slate-500">
+            Owner-scoped operational view of the research → validation → handoff pipeline. Only persisted data is shown.
+          </p>
+        </div>
+        {ops ? (
+          <span className="text-xs text-slate-400">Snapshot {new Date(ops.generatedAt).toLocaleTimeString()}</span>
+        ) : null}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        {displayMetrics.map((m) => (
-          <Card key={m.label} className="p-4">
-            <div className="text-xs text-slate-500">{m.label}</div>
-            <div className="mt-1 text-xl font-bold">{m.value}</div>
-          </Card>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        {metrics.map((metric) => (
+          <MetricCard key={metric.label} {...metric} loading={loading} />
         ))}
       </div>
 
-      <Card>
-        <CardHeader title="Next Best Action" subtitle="Transparent recommendation from your opportunity scores" />
-        <div className="space-y-2 p-5">
-          {top ? (
-            <>
-              <div className="text-lg font-semibold">Next: {top.title}</div>
-              <p className="text-sm text-slate-600">{recommendation}</p>
-              <p className="text-sm text-slate-600">
-                Overall score {top.overallScore.toFixed(1)}/100 · Status {top.status} · Halal {top.halalStatus}.
-                Planned objective: {top.nextAction}.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <Link href={`/opportunities/${top.id}`} className="inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white">
-                  Open opportunity
-                </Link>
-                <Link href="/experiments" className="inline-block rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium">
-                  View experiments
-                </Link>
-              </div>
-            </>
-          ) : (
-            <p className="text-sm text-slate-600">Create your first opportunity to get personalized recommendations.</p>
-          )}
+      <DashboardCard
+        title="System health"
+        subtitle="From the authenticated system-health endpoint. NOT_CONFIGURED is never reported as HEALTHY."
+        action={
+          <Link href="/health" className="text-xs font-medium text-blue-700 hover:underline">
+            Open full health →
+          </Link>
+        }
+      >
+        <div className="p-5">
+          <SystemHealthPanel />
         </div>
-      </Card>
+      </DashboardCard>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader title="Opportunity overview" subtitle="Your highest scoring opportunities" action={<Link className="text-sm text-blue-600" href="/opportunities">View all</Link>} />
-          <ul className="divide-y divide-slate-100">
-            {opps.slice(0, 4).map((o) => (
-              <li key={o.id} className="flex items-center justify-between gap-3 px-5 py-3">
-                <div className="min-w-0">
-                  <Link href={`/opportunities/${o.id}`} className="truncate text-sm font-medium text-blue-700">{o.title}</Link>
-                  <div className="mt-1 flex gap-2">
-                    <Badge className={statusBadgeClass(o.status)}>{o.status}</Badge>
-                    <Badge className={statusBadgeClass(o.halalStatus)}>{o.halalStatus}</Badge>
-                    {o.id.startsWith('opp-00') && <Badge className="bg-amber-100 text-amber-700">Sample</Badge>}
-                  </div>
-                </div>
-                <div className="text-sm font-bold">{o.overallScore.toFixed(1)}</div>
-              </li>
-            ))}
-            {opps.length === 0 && (
-              <li className="px-5 py-3 text-sm text-slate-500">No opportunities created yet. Add your first opportunity to get started.</li>
-            )}
-          </ul>
-        </Card>
-        <Card>
-          <CardHeader title="Revenue overview" action={<Link className="text-sm text-blue-600" href="/revenue">View revenue</Link>} />
-          <div className="space-y-2 p-5 text-sm">
-            <div className="flex justify-between"><span>Total net revenue</span><strong>{formatCurrency(metrics.totalRevenue)}</strong></div>
-            <div className="flex justify-between"><span>Entries</span><strong>{revenueEntries.length}</strong></div>
-            <p className="text-xs text-slate-500">Revenue is hand-entered from your income streams.</p>
+        <DashboardCard title="Handoff transport" subtitle="AIAgent → AI Income Lab delivery, derived from persisted delivery rows.">
+          <div className="space-y-3 p-5">
+            <HealthCard
+              name="AI Income Lab connectivity"
+              status={deliveries ? transportStatus : DATA_UNAVAILABLE}
+              message={
+                notConfiguredDelivery
+                  ? notConfiguredDelivery.lastErrorCode
+                    ? `Last delivery was NOT_CONFIGURED (${notConfiguredDelivery.lastErrorCode}). Configure the handoff endpoint and credential, then deliver a handoff to verify.`
+                    : "Last delivery was NOT_CONFIGURED. Configure the handoff endpoint and credential, then deliver a handoff to verify."
+                  : deliveryList.length === 0
+                    ? "No delivery attempts recorded yet. Transport state is UNKNOWN until a handoff delivery is attempted."
+                    : "Delivery attempts have been recorded. See the Handoff Center for per-delivery outcomes."
+              }
+              detail={
+                <Link href="/handoffs" className="mt-2 inline-block text-xs font-medium text-blue-700 hover:underline">
+                  Open Handoff Center →
+                </Link>
+              }
+            />
+            <HealthCard
+              name="Human review queue"
+              status={ops ? (ops.humanReviewItems > 0 ? "DEGRADED" : "HEALTHY") : DATA_UNAVAILABLE}
+              message={
+                ops
+                  ? `${ops.humanReviewItems} item(s) require human review · ${ops.waitingApprovals} agent task approval(s) waiting.`
+                  : "Operational status unavailable."
+              }
+            />
           </div>
-        </Card>
+        </DashboardCard>
+
+        <DashboardCard
+          title="Recent agent runs"
+          subtitle="Persisted execution records via the owner-scoped runs API."
+          action={
+            <Link href="/agent-runs" className="text-xs font-medium text-blue-700 hover:underline">
+              All runs →
+            </Link>
+          }
+        >
+          <div className="space-y-2 p-5">
+            {agentRuns && agentRuns.length > 0 ? (
+              agentRuns.map((run) => <AgentRunCard key={run.id} run={run} />)
+            ) : agentRuns ? (
+              <p className="text-sm text-slate-500">No agent runs recorded yet. Runs appear here when the agent runtime records executions.</p>
+            ) : (
+              <p className="text-sm text-slate-500">{DATA_UNAVAILABLE}</p>
+            )}
+          </div>
+        </DashboardCard>
       </div>
+
+      <DashboardCard
+        title="Recent research runs"
+        subtitle="Latest owner-scoped research executions with evidence counts."
+        action={
+          <Link href="/research" className="text-xs font-medium text-blue-700 hover:underline">
+            Research Center →
+          </Link>
+        }
+      >
+        <div className="divide-y divide-slate-100">
+          {research && research.length > 0 ? (
+            research.map((run) => (
+              <div key={run.id} className="flex flex-wrap items-center justify-between gap-2 px-5 py-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium text-slate-800">{run.opportunityTitle}</p>
+                  <p className="text-xs text-slate-400">
+                    {new Date(run.startedAt).toLocaleString()} · {run.evidenceCount} evidence ·{" "}
+                    {run.conclusion ?? "no conclusion yet"}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <StatusBadge status={run.status} />
+                  {run.conclusion ? (
+                    <span className={`text-xs font-medium ${statusTone(run.conclusion) === "danger" ? "text-red-700" : "text-slate-500"}`}>
+                      {run.conclusion}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+            ))
+          ) : research ? (
+            <div className="px-5 py-6 text-sm text-slate-500">
+              No persisted research runs yet. Start one from the{" "}
+              <Link href="/research" className="text-blue-700 hover:underline">
+                Research Center
+              </Link>
+              .
+            </div>
+          ) : (
+            <div className="px-5 py-6 text-sm text-slate-500">{DATA_UNAVAILABLE}</div>
+          )}
+        </div>
+      </DashboardCard>
 
       <Card>
         <CardHeader
-          title="Experiment overview"
-          subtitle="Your active experiments"
-          action={<Link className="text-sm text-blue-600" href="/experiments">View experiments</Link>}
+          title="Where to operate next"
+          subtitle="Quick paths into the console sections."
         />
-        {activeExperiments.length === 0 ? (
-          <p className="p-5 text-sm text-slate-500">
-            No active experiments. Create your first experiment to start validating your opportunities.
-          </p>
-        ) : (
-          <ul className="divide-y divide-slate-100">
-            {activeExperiments.map((e) => (
-              <li key={e.id} className="px-5 py-3 text-sm">
-                <span className="font-medium">{e.hypothesis}</span>
-                <span className="ml-2"><Badge className={statusBadgeClass(e.status)}>{e.status}</Badge></span>
-              </li>
-            ))}
-          </ul>
-        )}
+        <div className="grid gap-2 p-5 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            { href: "/research", label: "Research Center", hint: "Runs, providers, evidence" },
+            { href: "/handoffs", label: "Handoff Center", hint: "Delivery lifecycle + audit" },
+            { href: "/providers", label: "Providers", hint: "Configuration and health" },
+            { href: "/audit-logs", label: "Audit Logs", hint: "Persisted operational events" },
+          ].map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="rounded-lg border border-slate-200 p-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40"
+            >
+              <div className="text-sm font-semibold text-slate-800">{item.label}</div>
+              <div className="mt-0.5 text-xs text-slate-500">{item.hint}</div>
+            </Link>
+          ))}
+        </div>
       </Card>
     </div>
   );

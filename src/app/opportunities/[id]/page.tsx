@@ -15,6 +15,7 @@ import { ResearchHistoryIntelligence } from "@/components/ResearchHistoryIntelli
 import { OpportunityReadiness } from "@/components/OpportunityReadiness";
 import { OpportunityDecisionPanel } from "@/components/OpportunityDecisionPanel";
 import { OpportunityValidationPanel } from "@/components/OpportunityValidationPanel";
+import { OpportunityHandoffSection } from "@/components/OpportunityHandoffSection";
 import { formatRelativeTime } from "@/lib/format";
 
 export default function OpportunityDetailPage({ params }: { params: { id: string } }) {
@@ -396,6 +397,10 @@ export default function OpportunityDetailPage({ params }: { params: { id: string
           </p>
         </Card>
       </div>
+
+      {!isSample && (
+        <OpportunityHandoffSection opportunityId={opp.id} />
+      )}
     </div>
   );
 }
