@@ -90,7 +90,6 @@ export async function POST(request: Request) {
       severity: "INFO",
       dataClass: "UNKNOWN",
     });
-    setSessionCookie(response, token, expiresAt);
     return response;
   } catch (error) {
     if (isDbUnavailableError(error)) {
